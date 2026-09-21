@@ -1,16 +1,22 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { runInit } from './commands/init.js';
 import { runConfigGet, runConfigList, runConfigSet } from './commands/config.js';
 import { runSync } from './commands/sync.js';
 import { logger } from './logger.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8')) as { version: string };
+
 const program = new Command();
 
 program
   .name('syncify')
   .description('Sync a Shopify Production store to a Dev store, with strict destination guards.')
-  .version('0.1.0');
+  .version(pkg.version);
 
 program
   .command('init')
