@@ -2,8 +2,8 @@
 
 CLI to sync a Shopify **Production** store into a **Dev** store: products &
 variants (with metafields), theme, shop metafields, metaobjects, files
-(images/videos/generic files), Online Store pages, and basic discount codes.
-One-way only (Production → Dev), never the reverse.
+(images/videos/generic files), Online Store pages, navigation menus, and
+basic discount codes. One-way only (Production → Dev), never the reverse.
 
 ## Setup
 
@@ -62,6 +62,7 @@ below are designed to catch.
    - `read_metaobjects`
    - `read_metaobject_definitions`
    - `read_files`
+   - `read_online_store_navigation`
 
    No scope is needed for shop-level or product-level metafields — Shopify
    doesn't have a `read_metafields`/`write_metafields` scope (that was
@@ -86,6 +87,7 @@ Repeat the same steps in the **Dev** store admin, naming the app e.g.
 - `write_metaobjects`
 - `write_metaobject_definitions`
 - `write_files`
+- `write_online_store_navigation`
 
 (Same note as above — no `write_metafields` scope exists; shop and product
 metafields don't need one, but metaobjects do.)
@@ -138,7 +140,7 @@ running `syncify sync --resources theme`.
 
 ```sh
 syncify init [--from <domain>] [--to <domain>] [--resources <list>]
-# resources: products, theme, metafields, metaobjects, content, discounts, files
+# resources: products, theme, metafields, metaobjects, content, discounts, files, menus
 syncify config list
 syncify config get <key>              # e.g. resources, guard.allowedDevPlanNames
 syncify config set <key> <value>      # comma-separate list values
@@ -180,8 +182,12 @@ instead of being cleaned up, so you can inspect `<path>/templates/` against
 - **Metaobject reference fields** (`metaobject_reference`, `product_reference`,
   `file_reference`, etc.) are skipped — the GIDs they hold on Production
   don't resolve to the same records on Dev. Only scalar fields sync.
-- **Blogs, articles, and navigation menus** are not synced yet — only Online
-  Store pages.
+- **Blogs and articles** are not synced yet — only Online Store pages.
+- **Navigation menus**: only URL-based items sync (HTTP links, Frontpage,
+  Search, Catalog). Items linking to a specific resource (product,
+  collection, page, blog, article, metaobject, shop policy) are skipped
+  along with their sub-items — the GIDs they hold on Production don't
+  resolve to the same records on Dev.
 - **Discount codes** only cover basic percentage/fixed-amount codes (BXGY,
   free shipping, and automatic discounts are skipped and logged). This sync
   is not idempotent: re-running will attempt to recreate codes and fail on
@@ -190,7 +196,8 @@ instead of being cleaned up, so you can inspect `<path>/templates/` against
   handle to match on, so this sync is **not idempotent**: re-running will
   create duplicate files on Dev.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
-  `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`, etc.) are
+  `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`,
+  `MenuItemCreateInput`, `MenuItemUpdateInput`, etc.) are
   pinned to API version `2026-07` (the latest stable version as of writing)
   in `src/client.ts` but should be verified against a live schema
   introspection before the first real run — Shopify revises these across
