@@ -6,6 +6,20 @@ codes. One-way only (Production → Dev), never the reverse.
 
 ## Setup
 
+### Via Homebrew
+
+```sh
+brew tap ThanhKhoaIT/syncify https://github.com/ThanhKhoaIT/syncify.git
+brew install syncify
+```
+
+The tap needs the explicit URL above (not just `brew tap ThanhKhoaIT/syncify`)
+since this repo doesn't follow Homebrew's `homebrew-<name>` naming
+convention — the formula lives in [`Formula/syncify.rb`](Formula/syncify.rb)
+alongside the source.
+
+### From source
+
 ```sh
 npm install
 npm run build
