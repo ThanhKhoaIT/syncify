@@ -1,5 +1,5 @@
 import { SyncContext, SyncResult } from '../types.js';
-import { logger } from '../logger.js';
+import { logger, createProgressBar } from '../logger.js';
 
 interface Variant {
   sku: string | null;
@@ -109,6 +109,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
   }
 
   let applied = 0;
+  const bar = createProgressBar(products.length, 'products');
   for (const product of products) {
     const input = {
       handle: product.handle,
@@ -134,6 +135,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     const result: any = await ctx.dev.mutate(PRODUCT_SET_MUTATION, { input });
     if (result.productSet.userErrors?.length) {
       notes.push(`Product "${product.handle}": ${JSON.stringify(result.productSet.userErrors)}`);
+      bar.tick();
       continue;
     }
     applied += 1;
@@ -153,7 +155,9 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
         notes.push(`Product "${product.handle}" metafields: ${JSON.stringify(mfResult.metafieldsSet.userErrors)}`);
       }
     }
+    bar.tick();
   }
+  bar.done();
 
   return { resource: 'products', planned: products.length, applied, skipped: products.length - applied, notes };
 }

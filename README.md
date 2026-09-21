@@ -1,9 +1,9 @@
 # syncify
 
 CLI to sync a Shopify **Production** store into a **Dev** store: products &
-variants (with metafields), theme, shop metafields, metaobjects, Online
-Store pages, and basic discount codes. One-way only (Production → Dev),
-never the reverse.
+variants (with metafields), theme, shop metafields, metaobjects, files
+(images/videos/generic files), Online Store pages, and basic discount codes.
+One-way only (Production → Dev), never the reverse.
 
 ## Setup
 
@@ -60,6 +60,7 @@ below are designed to catch.
    - `read_discounts`
    - `read_metaobjects`
    - `read_metaobject_definitions`
+   - `read_files`
 
    No scope is needed for shop-level or product-level metafields — Shopify
    doesn't have a `read_metafields`/`write_metafields` scope (that was
@@ -83,6 +84,7 @@ Repeat the same steps in the **Dev** store admin, naming the app e.g.
 - `write_discounts`
 - `write_metaobjects`
 - `write_metaobject_definitions`
+- `write_files`
 
 (Same note as above — no `write_metafields` scope exists; shop and product
 metafields don't need one, but metaobjects do.)
@@ -132,6 +134,7 @@ running `syncify sync --resources theme`.
 
 ```sh
 syncify init [--from <domain>] [--to <domain>] [--resources <list>]
+# resources: products, theme, metafields, metaobjects, content, discounts, files
 syncify config list
 syncify config get <key>              # e.g. resources, guard.allowedDevPlanNames
 syncify config set <key> <value>      # comma-separate list values
@@ -160,6 +163,9 @@ syncify -h | --help                   # or: syncify <command> -h
   free shipping, and automatic discounts are skipped and logged). This sync
   is not idempotent: re-running will attempt to recreate codes and fail on
   duplicates.
+- **Files** (`GenericFile`, `MediaImage`, `Video`, `Model3d`) have no stable
+  handle to match on, so this sync is **not idempotent**: re-running will
+  create duplicate files on Dev.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
   `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`, etc.) are
   pinned to API version `2026-07` (the latest stable version as of writing)

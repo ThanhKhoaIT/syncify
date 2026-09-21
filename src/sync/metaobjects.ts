@@ -1,5 +1,5 @@
 import { SyncContext, SyncResult } from '../types.js';
-import { logger } from '../logger.js';
+import { logger, createProgressBar } from '../logger.js';
 
 // Field types whose value holds a GID pointing at another resource, which
 // won't exist (or will point at the wrong record) on the dev store. Synced
@@ -161,9 +161,11 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
   } while (devCursor);
 
   let applied = 0;
+  const bar = createProgressBar(planned, 'metaobjects');
   for (const def of definitions) {
     if (existingTypes.has(def.type)) {
       applied += 1;
+      bar.tick();
       continue;
     }
     const result: any = await ctx.dev.mutate(DEFINITION_CREATE, {
@@ -183,6 +185,7 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
     } else {
       applied += 1;
     }
+    bar.tick();
   }
 
   for (const entry of entries) {
@@ -203,7 +206,9 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
     } else {
       applied += 1;
     }
+    bar.tick();
   }
+  bar.done();
 
   return { resource: 'metaobjects', planned, applied, skipped: planned - applied, notes };
 }

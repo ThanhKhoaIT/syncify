@@ -23,7 +23,10 @@ program
   .description('Create .syncifyrc.json and scaffold .env for this project')
   .option('--from <domain>', 'Production store domain')
   .option('--to <domain>', 'Dev store domain')
-  .option('--resources <list>', 'Comma-separated resources (products,theme,metafields,metaobjects,content,discounts)')
+  .option(
+    '--resources <list>',
+    'Comma-separated resources (products,theme,metafields,metaobjects,content,discounts,files)'
+  )
   .action(async (opts) => {
     await runInit(opts);
   });

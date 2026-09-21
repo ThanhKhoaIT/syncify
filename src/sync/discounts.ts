@@ -1,5 +1,5 @@
 import { SyncContext, SyncResult } from '../types.js';
-import { logger } from '../logger.js';
+import { logger, createProgressBar } from '../logger.js';
 
 const DISCOUNTS_QUERY = `#graphql
   query CodeDiscounts($cursor: String) {
@@ -68,6 +68,7 @@ export async function syncDiscounts(ctx: SyncContext): Promise<SyncResult> {
   }
 
   let applied = 0;
+  const bar = createProgressBar(supported.length, 'discounts');
   for (const discount of supported) {
     const value = discount.customerGets.value;
     const customerGetsValue =
@@ -92,7 +93,9 @@ export async function syncDiscounts(ctx: SyncContext): Promise<SyncResult> {
     } else {
       applied += 1;
     }
+    bar.tick();
   }
+  bar.done();
 
   return { resource: 'discounts', planned: supported.length, applied, skipped, notes };
 }

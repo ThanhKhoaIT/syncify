@@ -9,6 +9,7 @@ import { syncMetafields } from '../sync/metafields.js';
 import { syncMetaobjects } from '../sync/metaobjects.js';
 import { syncContent } from '../sync/content.js';
 import { syncDiscounts } from '../sync/discounts.js';
+import { syncFiles } from '../sync/files.js';
 
 export interface SyncFlags {
   resources?: string;
@@ -23,6 +24,7 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
   metaobjects: syncMetaobjects,
   content: syncContent,
   discounts: syncDiscounts,
+  files: syncFiles,
 };
 
 export async function runSync(flags: SyncFlags): Promise<void> {

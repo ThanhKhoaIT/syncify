@@ -1,5 +1,5 @@
 import { SyncContext, SyncResult } from '../types.js';
-import { logger } from '../logger.js';
+import { logger, createProgressBar } from '../logger.js';
 
 interface Page {
   handle: string;
@@ -74,6 +74,7 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   } while (devCursor);
 
   let applied = 0;
+  const bar = createProgressBar(pages.length, 'content');
   for (const page of pages) {
     const existingId = existing.get(page.handle);
     const input = { title: page.title, handle: page.handle, body: page.body, isPublished: page.isPublished };
@@ -88,7 +89,9 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
     } else {
       applied += 1;
     }
+    bar.tick();
   }
+  bar.done();
 
   return { resource: 'content', planned: pages.length, applied, skipped: pages.length - applied, notes };
 }

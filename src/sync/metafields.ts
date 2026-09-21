@@ -1,5 +1,5 @@
 import { SyncContext, SyncResult } from '../types.js';
-import { logger } from '../logger.js';
+import { logger, createProgressBar } from '../logger.js';
 
 interface Metafield {
   namespace: string;
@@ -58,6 +58,7 @@ export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   const input = all.map((mf) => ({ ownerId, namespace: mf.namespace, key: mf.key, type: mf.type, value: mf.value }));
 
   let applied = 0;
+  const bar = createProgressBar(input.length, 'metafields');
   // metafieldsSet accepts at most 25 per call.
   for (let i = 0; i < input.length; i += 25) {
     const batch = input.slice(i, i + 25);
@@ -66,7 +67,9 @@ export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
       notes.push(`Errors in batch starting at ${i}: ${JSON.stringify(result.metafieldsSet.userErrors)}`);
     }
     applied += result.metafieldsSet.metafields.length;
+    bar.tick(batch.length);
   }
+  bar.done();
 
   return { resource: 'metafields', planned: all.length, applied, skipped: all.length - applied, notes };
 }
