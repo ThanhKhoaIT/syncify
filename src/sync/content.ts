@@ -6,13 +6,14 @@ interface Page {
   title: string;
   body: string;
   isPublished: boolean;
+  templateSuffix: string | null;
 }
 
 const PAGES_QUERY = `#graphql
   query Pages($cursor: String) {
     pages(first: 50, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { handle title body isPublished }
+      nodes { handle title body isPublished templateSuffix }
     }
   }
 `;
@@ -46,7 +47,7 @@ const PAGE_UPDATE = `#graphql
 
 export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   const notes: string[] = [
-    'Only Online Store pages are synced in this version. Blogs/articles and navigation menus are not yet implemented — track as follow-up work.',
+    "A page's assigned template (templateSuffix, e.g. \"contact\" for page.contact.json) is synced, but the template/section files themselves are theme files, not part of the Page resource — sync the \"theme\" resource too, or the page will reference a template that doesn't exist on Dev and fall back to the default.",
   ];
   const pages: Page[] = [];
   let cursor: string | null = null;
@@ -80,7 +81,13 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   const bar = createProgressBar(pages.length, 'content');
   for (const page of pages) {
     const existingId = existing.get(page.handle.normalize('NFC'));
-    const input = { title: page.title, handle: page.handle, body: page.body, isPublished: page.isPublished };
+    const input = {
+      title: page.title,
+      handle: page.handle,
+      body: page.body,
+      isPublished: page.isPublished,
+      templateSuffix: page.templateSuffix,
+    };
 
     const result: any = existingId
       ? await ctx.dev.mutate(PAGE_UPDATE, { id: existingId, page: input })

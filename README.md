@@ -186,6 +186,23 @@ deliberately left on disk when this happens (path printed in the error)
 instead of being cleaned up, so you can inspect `<path>/templates/` against
 `<path>/sections/` to confirm.
 
+## Page templates and sections
+
+A page's *assignment* to a custom template (`templateSuffix`, e.g. a page
+using `page.contact.json` instead of the default `page.json`) is part of
+the `content` resource and syncs with the page. The template file itself —
+and the sections/blocks it references — are **theme files**, not part of
+the Page resource, so they only exist on Dev if the `theme` resource is
+also synced:
+
+```sh
+syncify sync --resources theme,content --live
+```
+
+Sync `content` alone and a page assigned to a custom template will still
+create fine on Dev, but Shopify falls back to the default page template
+until the matching theme file exists there too.
+
 ## Known limitations
 
 - **Inventory levels** are not synced (would require mapping locations
