@@ -47,7 +47,7 @@ export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
     cursor = data.shop.metafields.pageInfo.hasNextPage ? data.shop.metafields.pageInfo.endCursor : null;
   } while (cursor);
 
-  logger.step(`Fetched ${all.length} shop metafields from ${ctx.config.prodStore}.`);
+  logger.step(`Found ${all.length} shop metafields on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
     return { resource: 'metafields', planned: all.length, applied: 0, skipped: 0, notes };

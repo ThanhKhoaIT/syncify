@@ -111,7 +111,7 @@ export async function syncArticles(ctx: SyncContext): Promise<SyncResult> {
     cursor = data.articles.pageInfo.hasNextPage ? data.articles.pageInfo.endCursor : null;
   } while (cursor);
 
-  logger.step(`Fetched ${blogs.length} blogs and ${articles.length} articles from ${ctx.config.prodStore}.`);
+  logger.step(`Found ${blogs.length} blogs and ${articles.length} articles on ${ctx.config.prodStore}.`);
 
   const planned = blogs.length + articles.length;
 

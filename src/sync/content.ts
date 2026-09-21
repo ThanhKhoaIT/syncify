@@ -58,7 +58,7 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
     cursor = data.pages.pageInfo.hasNextPage ? data.pages.pageInfo.endCursor : null;
   } while (cursor);
 
-  logger.step(`Fetched ${pages.length} pages from ${ctx.config.prodStore}.`);
+  logger.step(`Found ${pages.length} pages on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
     return { resource: 'content', planned: pages.length, applied: 0, skipped: 0, notes };

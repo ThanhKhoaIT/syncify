@@ -32,6 +32,18 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
   articles: syncArticles,
 };
 
+const RESOURCE_LABELS: Record<string, string> = {
+  products: '📦 Products',
+  theme: '🎨 Theme',
+  metafields: '🏷️  Metafields',
+  metaobjects: '🧩 Metaobjects',
+  content: '📄 Pages',
+  discounts: '🎟️  Discounts',
+  files: '🖼️  Files',
+  menus: '🧭 Menus',
+  articles: '📰 Articles & Blogs',
+};
+
 export async function runSync(flags: SyncFlags): Promise<void> {
   const config = resolveConfig();
   let resources = flags.resources ? flags.resources.split(',').map((r) => r.trim()) : config.resources;
@@ -76,10 +88,13 @@ export async function runSync(flags: SyncFlags): Promise<void> {
   const results: SyncResult[] = [];
 
   for (const resource of resources) {
-    logger.step(`\n=== ${resource} ===`);
+    logger.step(`\n${RESOURCE_LABELS[resource] ?? resource}`);
     const result = await RUNNERS[resource](ctx);
     results.push(result);
-    logger.info(`${resource}: planned=${result.planned} applied=${result.applied} skipped=${result.skipped}`);
+    const summary = live
+      ? `✅ ${result.applied} synced${result.skipped > 0 ? `, ${result.skipped} skipped` : ''} (${result.planned} total)`
+      : `📝 ${result.planned} would sync (dry-run)`;
+    logger.info(summary);
     if (result.notes.length > 0) {
       result.notes.forEach((n) => logger.file(`${resource}: ${n}`));
       logger.info(`  (${result.notes.length} note(s) written to syncify.log)`);

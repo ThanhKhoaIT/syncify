@@ -71,7 +71,7 @@ export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
     notes.push(`Skipped ${skipped} file(s) with no resolvable source URL (still processing on Production).`);
   }
 
-  logger.step(`Fetched ${withUrls.length} files from ${ctx.config.prodStore} (${skipped} skipped).`);
+  logger.step(`Found ${withUrls.length} files on ${ctx.config.prodStore} (${skipped} skipped).`);
 
   if (!ctx.live) {
     return { resource: 'files', planned: withUrls.length, applied: 0, skipped, notes };

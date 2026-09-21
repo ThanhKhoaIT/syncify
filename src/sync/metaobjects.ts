@@ -123,7 +123,7 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
     cursor = data.metaobjectDefinitions.pageInfo.hasNextPage ? data.metaobjectDefinitions.pageInfo.endCursor : null;
   } while (cursor);
 
-  logger.step(`Fetched ${definitions.length} metaobject definitions from ${ctx.config.prodStore}.`);
+  logger.step(`Found ${definitions.length} metaobject definitions on ${ctx.config.prodStore}.`);
 
   const entries: Entry[] = [];
   for (const def of definitions) {
@@ -135,7 +135,7 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
     } while (entryCursor);
   }
 
-  logger.step(`Fetched ${entries.length} metaobject entries from ${ctx.config.prodStore}.`);
+  logger.step(`Found ${entries.length} metaobject entries on ${ctx.config.prodStore}.`);
 
   const planned = definitions.length + entries.length;
 

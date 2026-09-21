@@ -61,7 +61,7 @@ export async function syncDiscounts(ctx: SyncContext): Promise<SyncResult> {
     cursor = data.codeDiscountNodes.pageInfo.hasNextPage ? data.codeDiscountNodes.pageInfo.endCursor : null;
   } while (cursor);
 
-  logger.step(`Fetched ${supported.length} supported discount codes from ${ctx.config.prodStore} (${skipped} skipped).`);
+  logger.step(`Found ${supported.length} discount codes on ${ctx.config.prodStore} (${skipped} skipped).`);
 
   if (!ctx.live) {
     return { resource: 'discounts', planned: supported.length, applied: 0, skipped, notes };

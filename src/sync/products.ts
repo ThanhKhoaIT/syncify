@@ -99,7 +99,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     cursor = data.products.pageInfo.hasNextPage ? data.products.pageInfo.endCursor : null;
   } while (cursor);
 
-  logger.step(`Fetched ${products.length} products from ${ctx.config.prodStore}.`);
+  logger.step(`Found ${products.length} products on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
     return {

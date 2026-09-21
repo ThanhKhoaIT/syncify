@@ -231,7 +231,7 @@ export async function syncMenus(ctx: SyncContext): Promise<SyncResult> {
   const stats = { skipped: 0 };
   const pruned = menus.map((m) => ({ handle: m.handle, title: m.title, items: dropUnresolvable(m.items, stats) }));
 
-  logger.step(`Fetched ${menus.length} menus from ${ctx.config.prodStore}.`);
+  logger.step(`Found ${menus.length} menus on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
     return {
