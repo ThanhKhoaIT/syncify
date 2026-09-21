@@ -162,6 +162,10 @@ syncify -h | --help                   # or: syncify <command> -h
   duplicates.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
   `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`, etc.) are
-  pinned to API version `2024-10` in `src/client.ts` but should be verified
-  against a live schema introspection before the first real run — Shopify
-  revises these across versions.
+  pinned to API version `2026-07` (the latest stable version as of writing)
+  in `src/client.ts` but should be verified against a live schema
+  introspection before the first real run — Shopify revises these across
+  versions. Check [shopify.dev/docs/api/usage/versioning](https://shopify.dev/docs/api/usage/versioning)
+  periodically — Shopify retires versions ~12 months after release, and an
+  app targeting a retired version silently "falls forward" to whatever the
+  oldest still-accessible version is, rather than erroring.

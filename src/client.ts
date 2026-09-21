@@ -17,7 +17,7 @@ export class ShopifyClient {
     this.store = opts.store;
     this.token = opts.token;
     this.role = opts.role;
-    this.apiVersion = opts.apiVersion ?? '2024-10';
+    this.apiVersion = opts.apiVersion ?? '2026-07';
   }
 
   private get endpoint(): string {
