@@ -1,7 +1,7 @@
 class Syncify < Formula
   desc "Sync a Shopify Production store into a Dev store, with strict destination guards"
   homepage "https://github.com/ThanhKhoaIT/syncify"
-  url "https://github.com/ThanhKhoaIT/syncify.git", tag: "v0.1.17", revision: "df239b9e43e42969146bdb1eb19cc7c84b47efa3"
+  url "https://github.com/ThanhKhoaIT/syncify.git", tag: "v0.1.18", revision: "65646851326261b729ecbefa392b3dc08cffbf70"
   license "MIT"
 
   depends_on "node"
