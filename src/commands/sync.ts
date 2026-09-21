@@ -1,3 +1,4 @@
+import prompts from 'prompts';
 import { ShopifyClient } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { assertSafeToWrite } from '../guard.js';
@@ -31,8 +32,9 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
 
 export async function runSync(flags: SyncFlags): Promise<void> {
   const config = resolveConfig();
-  const resources = flags.resources ? flags.resources.split(',').map((r) => r.trim()) : config.resources;
+  let resources = flags.resources ? flags.resources.split(',').map((r) => r.trim()) : config.resources;
   const live = flags.live ?? false;
+  const yes = flags.yes ?? false;
 
   const unknown = resources.filter((r) => !RUNNERS[r]);
   if (unknown.length > 0) {
@@ -47,7 +49,24 @@ export async function runSync(flags: SyncFlags): Promise<void> {
   );
 
   if (live) {
-    await assertSafeToWrite(dev, config, { yes: flags.yes ?? false });
+    await assertSafeToWrite(dev, config, { yes });
+
+    if (!yes) {
+      const { selected } = await prompts({
+        type: 'multiselect',
+        name: 'selected',
+        message: 'Resources to sync (space to toggle, enter to confirm):',
+        choices: resources.map((r) => ({ title: r, value: r, selected: true })),
+        min: 1,
+      });
+
+      if (!selected || selected.length === 0) {
+        throw new Error('No resources selected — aborting. No writes were made.');
+      }
+
+      resources = selected;
+      logger.info(`Syncing: ${resources.join(', ')}`);
+    }
   }
 
   const ctx: SyncContext = { prod, dev, config, live };

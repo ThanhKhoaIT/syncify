@@ -60,7 +60,7 @@ export async function assertSafeToWrite(devClient: ShopifyClient, config: Resolv
     const response = await prompts({
       type: 'text',
       name: 'confirmation',
-      message: `About to WRITE to ${liveDomain} (plan: ${planName}). Type the store domain to confirm:`,
+      message: `About to WRITE to ${liveDomain} (plan: ${planName}).\nType the store domain to confirm:`,
     });
 
     if (response.confirmation !== liveDomain) {

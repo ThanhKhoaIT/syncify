@@ -107,7 +107,7 @@ export function createProgressBar(total: number, label: string): ProgressBar {
       current = total;
       if (isTTY) {
         render();
-        process.stdout.write('\n');
+        process.stdout.write('\n\n');
       }
     },
   };

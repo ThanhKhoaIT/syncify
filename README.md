@@ -129,7 +129,9 @@ running `syncify sync --resources theme`.
    check.
 5. **Interactive confirmation**, skippable only with `--yes`: you must type
    the destination domain back before a `--live` run proceeds. `--yes` skips
-   only this step, never the plan-check guard.
+   only this step, never the plan-check guard. Right after, you get a final
+   chance to pick/unpick which resources actually run (all pre-selected) —
+   also skipped by `--yes`, which runs the full resolved list as-is.
 6. **Dry-run by default.** `syncify sync` without `--live` never calls a
    mutation; it only reads from Production and reports counts.
 7. **No `--from`/`--to` flags on `sync`.** Direction is only ever read from
