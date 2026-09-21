@@ -7,6 +7,11 @@ class Syncify < Formula
   depends_on "node"
 
   def install
+    # Local install (incl. devDependencies) + build, since the global
+    # install below runs with --ignore-scripts and only installs
+    # "dependencies" — it can't run `tsc` itself.
+    system "npm", "install"
+    system "npm", "run", "build"
     system "npm", "install", *std_npm_args
     bin.install_symlink Dir["#{libexec}/bin/*"]
   end
