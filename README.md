@@ -149,6 +149,25 @@ syncify -h | --help                   # or: syncify <command> -h
 `-h`/`--help` works at the top level and on every subcommand
 (`syncify sync -h`, `syncify init -h`, etc.).
 
+## Logging
+
+Per-resource console output stays to a summary line
+(`products: planned=132 applied=130 skipped=2`). The detail behind that —
+skipped fields, non-fatal per-item errors, known-limitation notes like
+"only Online Store pages are synced" — is appended to `syncify.log` in the
+current directory instead, timestamped, one run after another (gitignored).
+Real failures (a thrown error that stops the run) still print to the
+console as well as being logged.
+
+If `syncify sync --resources theme` fails with something like `Section
+type 'X' does not refer to an existing section file`, that's `shopify
+theme push` validating a template on Production that references a section
+file Production's own theme doesn't actually have — a pre-existing issue
+on Production, not something the push introduced. The pulled theme is
+deliberately left on disk when this happens (path printed in the error)
+instead of being cleaned up, so you can inspect `<path>/templates/` against
+`<path>/sections/` to confirm.
+
 ## Known limitations
 
 - **Inventory levels** are not synced (would require mapping locations

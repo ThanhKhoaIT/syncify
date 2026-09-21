@@ -56,7 +56,10 @@ export async function runSync(flags: SyncFlags): Promise<void> {
     const result = await RUNNERS[resource](ctx);
     results.push(result);
     logger.info(`${resource}: planned=${result.planned} applied=${result.applied} skipped=${result.skipped}`);
-    result.notes.forEach((n) => logger.warn(`  - ${n}`));
+    if (result.notes.length > 0) {
+      result.notes.forEach((n) => logger.file(`${resource}: ${n}`));
+      logger.info(`  (${result.notes.length} note(s) written to syncify.log)`);
+    }
   }
 
   logger.success(

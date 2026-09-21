@@ -1,3 +1,5 @@
+import { appendFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import chalk from 'chalk';
 
 // Defense in depth: never let a token leak into stdout/logs even by accident.
@@ -5,6 +7,17 @@ const TOKEN_PATTERN = /shpat_[a-zA-Z0-9]+/g;
 
 function redact(message: string): string {
   return message.replace(TOKEN_PATTERN, '***REDACTED***');
+}
+
+const LOG_PATH = resolve(process.cwd(), 'syncify.log');
+
+// Best-effort — a logging failure should never crash the sync itself.
+function appendToLogFile(message: string) {
+  try {
+    appendFileSync(LOG_PATH, `[${new Date().toISOString()}] ${redact(message)}\n`, 'utf-8');
+  } catch {
+    // ignore
+  }
 }
 
 export const logger = {
@@ -19,9 +32,16 @@ export const logger = {
   },
   error(message: string) {
     console.error(chalk.red(redact(message)));
+    appendToLogFile(`ERROR: ${message}`);
   },
   step(message: string) {
     console.log(chalk.cyan(redact(message)));
+  },
+  // Per-item notes (skipped fields, non-critical userErrors, known-limitation
+  // caveats) — written to syncify.log instead of the console, so a run's
+  // live output stays readable while the detail is still on record.
+  file(message: string) {
+    appendToLogFile(message);
   },
 };
 
