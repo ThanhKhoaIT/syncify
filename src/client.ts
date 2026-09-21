@@ -40,14 +40,23 @@ export class ShopifyClient {
   }
 
   private async request<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    const res = await fetch(this.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': this.token,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': this.token,
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+    } catch (err) {
+      const cause = err instanceof Error && err.cause instanceof Error ? `: ${err.cause.message}` : '';
+      throw new Error(
+        `Network request to ${this.store} (${this.endpoint}) failed${cause}. Check the store domain is correct and reachable — this is not a Shopify API error.`,
+        { cause: err }
+      );
+    }
 
     if (!res.ok) {
       throw new Error(`Shopify API request to ${this.store} failed: ${res.status} ${res.statusText}`);

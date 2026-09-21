@@ -5,6 +5,6 @@
   "themeSync": "cli",
   "guard": {
     "allowedDestinations": ["dev-store.myshopify.com"],
-    "allowedDevPlanNames": ["Developer Preview", "Partner test store", "Development", "Trial"]
+    "allowedDevPlanNames": ["Developer Preview", "Basic App Development", "Partner test store", "Development", "Trial"]
   }
 }

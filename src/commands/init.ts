@@ -73,7 +73,7 @@ export async function runInit(flags: InitFlags): Promise<void> {
     themeSync: 'cli',
     guard: {
       allowedDestinations: [to],
-      allowedDevPlanNames: ['Developer Preview', 'Partner test store', 'Development', 'Trial'],
+      allowedDevPlanNames: ['Developer Preview', 'Basic App Development', 'Partner test store', 'Development', 'Trial'],
     },
   };
 
