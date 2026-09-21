@@ -25,7 +25,7 @@ program
   .option('--to <domain>', 'Dev store domain')
   .option(
     '--resources <list>',
-    'Comma-separated resources (products,theme,metafields,metaobjects,content,discounts,files,menus,articles)'
+    'Comma-separated resources (products,theme,metafields,metaobjects,content,discounts,files,menus,articles,collections)'
   )
   .action(async (opts) => {
     await runInit(opts);

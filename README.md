@@ -1,10 +1,10 @@
 # syncify
 
 CLI to sync a Shopify **Production** store into a **Dev** store: products &
-variants (with metafields), theme, shop metafields, metaobjects, files
-(images/videos/generic files), Online Store pages, blogs & articles,
-navigation menus, and basic discount codes. One-way only (Production →
-Dev), never the reverse.
+variants (with metafields), collections, theme, shop metafields,
+metaobjects, files (images/videos/generic files), Online Store pages, blogs
+& articles, navigation menus, and basic discount codes. One-way only
+(Production → Dev), never the reverse.
 
 ## Setup
 
@@ -175,7 +175,7 @@ running `syncify sync --resources theme`.
 
 ```sh
 syncify init [--from <domain>] [--to <domain>] [--resources <list>]
-# resources: products, theme, metafields, metaobjects, content, discounts, files, menus, articles
+# resources: products, theme, metafields, metaobjects, content, discounts, files, menus, articles, collections
 syncify config list
 syncify config get <key>              # e.g. resources, guard.allowedDevPlanNames
 syncify config set <key> <value>      # comma-separate list values
@@ -264,6 +264,15 @@ Dev until manually updated.
   a product has no media on Dev — re-running never duplicates, but an image
   added/changed on Production after that first sync won't propagate. Video
   and 3D model media are not synced, only images.
+- **Collections**: automated (rule-based) collections sync their rules
+  directly, so Dev resolves membership on its own. Manual collections'
+  member products (matched by handle, so `products` should sync first) only
+  sync on first creation — re-running doesn't update membership on an
+  already-existing Dev collection. Collection metafields are not synced.
+  Uses the deprecated `ruleSet`/`collectionAddProducts` fields rather than
+  Shopify's newer `sources`/`inclusion` API, since the latter's exact shape
+  isn't fully documented — verify against schema introspection before the
+  first live run if this breaks after a Shopify API update.
 - **Metaobject definition updates** aren't synced — only missing definitions
   are created on Dev; if a definition already exists there, changes to its
   fields on Production aren't propagated.

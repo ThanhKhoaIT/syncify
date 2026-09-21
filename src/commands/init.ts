@@ -10,7 +10,7 @@ export interface InitFlags {
   resources?: string;
 }
 
-const ALL_RESOURCES = ['products', 'theme', 'metafields', 'metaobjects', 'content', 'discounts', 'files', 'menus', 'articles'];
+const ALL_RESOURCES = ['products', 'theme', 'metafields', 'metaobjects', 'content', 'discounts', 'files', 'menus', 'articles', 'collections'];
 
 export async function runInit(flags: InitFlags): Promise<void> {
   if (rcExists()) {

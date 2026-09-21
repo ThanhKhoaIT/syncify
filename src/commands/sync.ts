@@ -13,6 +13,7 @@ import { syncDiscounts } from '../sync/discounts.js';
 import { syncFiles } from '../sync/files.js';
 import { syncMenus } from '../sync/menus.js';
 import { syncArticles } from '../sync/articles.js';
+import { syncCollections } from '../sync/collections.js';
 
 export interface SyncFlags {
   resources?: string;
@@ -30,6 +31,7 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
   files: syncFiles,
   menus: syncMenus,
   articles: syncArticles,
+  collections: syncCollections,
 };
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -42,6 +44,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   files: '🖼️  Files',
   menus: '🧭 Menus',
   articles: '📰 Articles & Blogs',
+  collections: '🗂️  Collections',
 };
 
 export async function runSync(flags: SyncFlags): Promise<void> {
