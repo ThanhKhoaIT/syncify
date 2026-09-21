@@ -64,19 +64,22 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   }
 
   // Build handle -> id map of existing dev pages so re-running sync updates
-  // instead of erroring on a duplicate handle.
+  // instead of erroring on a duplicate handle. Handles are normalized (NFC)
+  // before comparing — a handle with accented characters (e.g. Vietnamese)
+  // can come back from the API as either precomposed or decomposed Unicode,
+  // and those aren't === equal in JS even though they're the same handle.
   const existing = new Map<string, string>();
   let devCursor: string | null = null;
   do {
     const data: any = await ctx.dev.query(DEV_PAGES_QUERY, { cursor: devCursor });
-    for (const p of data.pages.nodes) existing.set(p.handle, p.id);
+    for (const p of data.pages.nodes) existing.set(p.handle.normalize('NFC'), p.id);
     devCursor = data.pages.pageInfo.hasNextPage ? data.pages.pageInfo.endCursor : null;
   } while (devCursor);
 
   let applied = 0;
   const bar = createProgressBar(pages.length, 'content');
   for (const page of pages) {
-    const existingId = existing.get(page.handle);
+    const existingId = existing.get(page.handle.normalize('NFC'));
     const input = { title: page.title, handle: page.handle, body: page.body, isPublished: page.isPublished };
 
     const result: any = existingId

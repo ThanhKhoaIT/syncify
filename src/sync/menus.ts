@@ -256,29 +256,32 @@ export async function syncMenus(ctx: SyncContext): Promise<SyncResult> {
       if (!node?.handle) continue;
       const type = TYPENAME_TO_MENU_ITEM_TYPE[node.__typename];
       if (!type) continue;
-      const devId = await resolveDevId(ctx, type, node.handle);
+      const handle = node.handle.normalize('NFC');
+      const devId = await resolveDevId(ctx, type, handle);
       if (devId) {
         resolved.set(node.id, devId);
       } else {
-        notes.push(`No matching ${type.toLowerCase()} with handle "${node.handle}" found on Dev — skipping menu item(s) that link to it.`);
+        notes.push(`No matching ${type.toLowerCase()} with handle "${handle}" found on Dev — skipping menu item(s) that link to it.`);
       }
     }
   }
 
   const filtered = pruned.map((m) => ({ handle: m.handle, title: m.title, items: resolveAndFilter(m.items, resolved, stats) }));
 
+  // Normalized (NFC) the same way as content.ts — an accented handle can
+  // come back from the API as either precomposed or decomposed Unicode.
   const existing = new Map<string, string>();
   let devCursor: string | null = null;
   do {
     const data: any = await ctx.dev.query(DEV_MENUS_QUERY, { cursor: devCursor });
-    for (const m of data.menus.nodes) existing.set(m.handle, m.id);
+    for (const m of data.menus.nodes) existing.set(m.handle.normalize('NFC'), m.id);
     devCursor = data.menus.pageInfo.hasNextPage ? data.menus.pageInfo.endCursor : null;
   } while (devCursor);
 
   let applied = 0;
   const bar = createProgressBar(filtered.length, 'menus');
   for (const menu of filtered) {
-    const existingId = existing.get(menu.handle);
+    const existingId = existing.get(menu.handle.normalize('NFC'));
 
     const result: any = existingId
       ? await ctx.dev.mutate(MENU_UPDATE, { id: existingId, title: menu.title, items: menu.items })

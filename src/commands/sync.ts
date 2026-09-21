@@ -55,7 +55,8 @@ export async function runSync(flags: SyncFlags): Promise<void> {
       const { selected } = await prompts({
         type: 'multiselect',
         name: 'selected',
-        message: 'Resources to sync (space to toggle, enter to confirm):',
+        message: 'Resources to sync',
+        instructions: 'space: toggle · a: all · enter: confirm\n',
         choices: resources.map((r) => ({ title: r, value: r, selected: true })),
         min: 1,
       });
