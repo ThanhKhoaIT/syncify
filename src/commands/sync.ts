@@ -1,0 +1,61 @@
+import { ShopifyClient } from '../client.js';
+import { resolveConfig } from '../config.js';
+import { assertSafeToWrite } from '../guard.js';
+import { logger } from '../logger.js';
+import { SyncContext, SyncResult } from '../types.js';
+import { syncProducts } from '../sync/products.js';
+import { syncTheme } from '../sync/theme.js';
+import { syncMetafields } from '../sync/metafields.js';
+import { syncContent } from '../sync/content.js';
+import { syncDiscounts } from '../sync/discounts.js';
+
+export interface SyncFlags {
+  resources?: string;
+  live?: boolean;
+  yes?: boolean;
+}
+
+const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
+  products: syncProducts,
+  theme: syncTheme,
+  metafields: syncMetafields,
+  content: syncContent,
+  discounts: syncDiscounts,
+};
+
+export async function runSync(flags: SyncFlags): Promise<void> {
+  const config = resolveConfig();
+  const resources = flags.resources ? flags.resources.split(',').map((r) => r.trim()) : config.resources;
+  const live = flags.live ?? false;
+
+  const unknown = resources.filter((r) => !RUNNERS[r]);
+  if (unknown.length > 0) {
+    throw new Error(`Unknown resource(s): ${unknown.join(', ')}. Valid: ${Object.keys(RUNNERS).join(', ')}`);
+  }
+
+  const prod = new ShopifyClient({ store: config.prodStore, token: config.prodToken, role: 'prod' });
+  const dev = new ShopifyClient({ store: config.devStore, token: config.devToken, role: 'dev' });
+
+  logger.info(
+    `Sync plan: ${resources.join(', ')} | ${config.prodStore} -> ${config.devStore} | mode: ${live ? 'LIVE' : 'DRY-RUN'}`
+  );
+
+  if (live) {
+    await assertSafeToWrite(dev, config, { yes: flags.yes ?? false });
+  }
+
+  const ctx: SyncContext = { prod, dev, config, live };
+  const results: SyncResult[] = [];
+
+  for (const resource of resources) {
+    logger.step(`\n=== ${resource} ===`);
+    const result = await RUNNERS[resource](ctx);
+    results.push(result);
+    logger.info(`${resource}: planned=${result.planned} applied=${result.applied} skipped=${result.skipped}`);
+    result.notes.forEach((n) => logger.warn(`  - ${n}`));
+  }
+
+  logger.success(
+    live ? '\nSync complete.' : '\nDry-run complete — no writes were made. Re-run with --live to apply.'
+  );
+}

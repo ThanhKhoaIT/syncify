@@ -1,0 +1,31 @@
+{
+  "name": "syncify",
+  "version": "0.1.0",
+  "description": "CLI to sync a Shopify Production store to a Dev store (products, theme, metafields, content, discounts) with strict destination guards.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "syncify": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/prompts": "^2.4.9",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

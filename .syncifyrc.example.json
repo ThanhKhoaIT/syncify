@@ -1,0 +1,10 @@
+{
+  "from": { "store": "prod-store.myshopify.com" },
+  "to": { "store": "dev-store.myshopify.com" },
+  "resources": ["products", "theme", "metafields", "content", "discounts"],
+  "themeSync": "cli",
+  "guard": {
+    "allowedDestinations": ["dev-store.myshopify.com"],
+    "allowedDevPlanNames": ["Developer Preview", "Partner test store", "Development", "Trial"]
+  }
+}
