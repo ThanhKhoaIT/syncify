@@ -206,6 +206,18 @@ self-labeled with its resource, so it stays readable even out of order.
 `THROTTLED` error) with exponential backoff, up to 5 attempts, so the added
 concurrency doesn't turn transient rate limits into a failed run.
 
+## Scope check
+
+Before any resource runs, `syncify` queries both tokens'
+`currentAppInstallation.accessScopes` and confirms each has the scopes the
+selected resources actually need (e.g. `read_discounts` on Production if
+`discounts` is selected, `write_files` on Dev if `files` is selected) —
+aborting with a clear list of what's missing rather than letting the run
+fail partway through on whichever resource happens to hit the permission
+gap first. Not skippable by `--yes` (it's a configuration problem, not a
+destination-safety confirmation). See "Getting the Production/Dev token"
+above for the full scope lists per resource.
+
 ## Product title prefix
 
 Every product pushed to Dev has its title prefixed (default `"[DEV] "`), so

@@ -2,6 +2,7 @@ import prompts from 'prompts';
 import { ShopifyClient } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { assertSafeToWrite } from '../guard.js';
+import { assertRequiredScopes } from '../scopes.js';
 import { logger, setProgressBarsSuppressed } from '../logger.js';
 import { SyncContext, SyncResult } from '../types.js';
 import { syncProducts } from '../sync/products.js';
@@ -116,6 +117,10 @@ export async function runSync(flags: SyncFlags): Promise<void> {
       logger.info(`Syncing: ${resources.join(', ')}`);
     }
   }
+
+  logger.step('\nChecking Admin API scopes for the selected resources...');
+  await assertRequiredScopes(prod, dev, resources);
+  logger.success('Scope check passed — both tokens have the permissions these resources need.');
 
   const ctx: SyncContext = { prod, dev, config, live };
   const results: SyncResult[] = [];
