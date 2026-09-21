@@ -45,7 +45,7 @@ const RESOURCE_LABELS: Record<string, string> = {
 };
 
 export async function runSync(flags: SyncFlags): Promise<void> {
-  const config = resolveConfig();
+  const config = await resolveConfig();
   let resources = flags.resources ? flags.resources.split(',').map((r) => r.trim()) : config.resources;
   const live = flags.live ?? false;
   const yes = flags.yes ?? false;

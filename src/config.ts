@@ -43,40 +43,55 @@ export function saveRc(rc: SyncifyRc): void {
   writeFileSync(RC_PATH, JSON.stringify(rc, null, 2) + '\n', 'utf-8');
 }
 
-interface EnvTokens {
-  prodToken: string;
-  devToken: string;
-}
+type Role = 'PROD' | 'DEV';
 
-function loadEnvTokens(): EnvTokens {
-  const prodToken = process.env.SHOPIFY_PROD_TOKEN;
-  const devToken = process.env.SHOPIFY_DEV_TOKEN;
-
-  const missing = (
-    [
-      ['SHOPIFY_PROD_TOKEN', prodToken],
-      ['SHOPIFY_DEV_TOKEN', devToken],
-    ] as const
-  )
-    .filter(([, v]) => !v)
-    .map(([k]) => k);
-
-  if (missing.length > 0) {
-    throw new Error(`Missing required env vars: ${missing.join(', ')}. Copy .env.example to .env and fill in values.`);
+// Shopify stopped allowing new legacy custom apps (static, permanent Admin
+// API tokens) as of 2026-01-01. Existing legacy apps keep working — hence
+// SHOPIFY_*_TOKEN is still supported directly — but a new app created via
+// the Dev Dashboard only gives a Client ID + secret, which must be
+// exchanged for a short-lived (24h) token via the client credentials grant.
+// See README.md "Getting the Production/Dev token" for both paths.
+async function exchangeClientCredentials(store: string, clientId: string, clientSecret: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`https://${store}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }).toString(),
+    });
+  } catch (err) {
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${err.cause.message}` : '';
+    throw new Error(`Client credentials exchange for ${store} failed${cause}. Check the store domain and Client ID/secret are correct.`);
   }
 
-  // Guard layer: distinct tokens are the last line of defense if everything
-  // else (dotfile, flags) somehow points both roles at the same store.
-  if (prodToken === devToken) {
-    throw new Error('SHOPIFY_PROD_TOKEN and SHOPIFY_DEV_TOKEN must not be identical — refusing to run.');
+  if (!res.ok) {
+    throw new Error(`Client credentials exchange for ${store} failed: ${res.status} ${res.statusText}`);
   }
 
-  return { prodToken: prodToken!, devToken: devToken! };
+  const json = (await res.json()) as { access_token?: string; error?: string; error_description?: string };
+  if (!json.access_token) {
+    throw new Error(`Client credentials exchange for ${store} returned no access_token: ${json.error_description ?? json.error ?? 'unknown error'}`);
+  }
+  return json.access_token;
 }
 
-export function resolveConfig(): ResolvedConfig {
+async function resolveToken(role: Role, store: string): Promise<string> {
+  const staticToken = process.env[`SHOPIFY_${role}_TOKEN`];
+  if (staticToken) return staticToken;
+
+  const clientId = process.env[`SHOPIFY_${role}_CLIENT_ID`];
+  const clientSecret = process.env[`SHOPIFY_${role}_CLIENT_SECRET`];
+  if (clientId && clientSecret) {
+    return exchangeClientCredentials(store, clientId, clientSecret);
+  }
+
+  throw new Error(
+    `Missing credentials for ${role}: set either SHOPIFY_${role}_TOKEN, or both SHOPIFY_${role}_CLIENT_ID and SHOPIFY_${role}_CLIENT_SECRET in .env. Copy .env.example and fill in values.`
+  );
+}
+
+export async function resolveConfig(): Promise<ResolvedConfig> {
   const rc = loadRc();
-  const env = loadEnvTokens();
 
   if (rc.from.store === rc.to.store) {
     throw new Error('.syncifyrc.json: "from.store" and "to.store" must not be the same store.');
@@ -85,14 +100,24 @@ export function resolveConfig(): ResolvedConfig {
     throw new Error(`"to.store" (${rc.to.store}) is not in guard.allowedDestinations. Refusing to run.`);
   }
 
+  const [prodToken, devToken] = await Promise.all([resolveToken('PROD', rc.from.store), resolveToken('DEV', rc.to.store)]);
+
+  // Guard layer: distinct tokens are the last line of defense if everything
+  // else (dotfile, flags) somehow points both roles at the same store.
+  if (prodToken === devToken) {
+    throw new Error(
+      'The resolved Production and Dev Admin API tokens are identical — refusing to run. Check SHOPIFY_PROD_*/SHOPIFY_DEV_* in .env.'
+    );
+  }
+
   return {
     ...rc,
     // Backward-compatible default for .syncifyrc.json files written before
     // this field existed.
     productTitlePrefix: rc.productTitlePrefix ?? '[DEV] ',
     prodStore: rc.from.store,
-    prodToken: env.prodToken,
+    prodToken,
     devStore: rc.to.store,
-    devToken: env.devToken,
+    devToken,
   };
 }

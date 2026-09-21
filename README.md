@@ -44,11 +44,17 @@ syncify sync --live       # actually applies changes to the Dev store
 
 ## Authentication
 
-Two separate custom apps, one per store — **do not reuse one app/token for
-both**, since that's exactly what the [safety guards](#safety-model-why-an-accidental-proddev-swap-cant-happen)
+Two separate apps, one per store — **do not reuse one app/token for both**,
+since that's exactly what the [safety guards](#safety-model-why-an-accidental-proddev-swap-cant-happen)
 below are designed to catch.
 
-### Getting the Production token (`SHOPIFY_PROD_TOKEN`) — read-only
+Shopify stopped allowing new **legacy custom apps** (the static-token flow
+below) as of **2026-01-01** — existing ones keep working fine, no need to
+migrate anything that already works. If you're setting this up fresh and
+don't already have custom apps for these two stores, use **Option B**
+instead.
+
+### Option A: legacy custom app (`SHOPIFY_PROD_TOKEN`) — read-only, existing apps only
 
 1. In the **Production** store admin, go to **Settings → Apps and sales
    channels → Develop apps**. (If you don't see "Develop apps", an admin
@@ -78,10 +84,8 @@ below are designed to catch.
    `.env` — it's `from.store` in `.syncifyrc.json`, set by `syncify init`
    (or `syncify config set from.store <domain>`).
 
-### Getting the Dev token (`SHOPIFY_DEV_TOKEN`) — read-write
-
-Repeat the same steps in the **Dev** store admin, naming the app e.g.
-`syncify (dev, read-write)`, but grant the matching write scopes instead:
+Repeat for the **Dev** store (`SHOPIFY_DEV_TOKEN`, naming the app e.g.
+`syncify (dev, read-write)`), but grant the matching write scopes instead:
 
 - `write_products`
 - `write_online_store_pages`
@@ -94,12 +98,39 @@ Repeat the same steps in the **Dev** store admin, naming the app e.g.
 (Same note as above — no `write_metafields` scope exists; shop and product
 metafields don't need one, but metaobjects do.)
 
-Copy the revealed token into `.env` as `SHOPIFY_DEV_TOKEN`. As above, the
-Dev store's domain goes in `.syncifyrc.json`'s `to.store`, not `.env`.
+Copy each revealed token into `.env` (`SHOPIFY_PROD_TOKEN`/`SHOPIFY_DEV_TOKEN`).
+Store domains don't go in `.env` — they're `from.store`/`to.store` in
+`.syncifyrc.json`, set by `syncify init` (or `syncify config set from.store
+<domain>`).
 
 > If you ever need to rotate a token, revoke the old one from the same
 > **API credentials** tab (**Uninstall app** or delete it) and regenerate —
 > don't leave old tokens active.
+
+### Option B: Dev Dashboard app (`SHOPIFY_*_CLIENT_ID`/`_CLIENT_SECRET`) — required for new apps
+
+Required for any app created on or after 2026-01-01. Same scope lists as
+Option A above (read-only set for Production, write set for Dev) — only the
+creation flow and credential shape differ:
+
+1. Go to [dev.shopify.com/dashboard](https://dev.shopify.com/dashboard) →
+   **Create app** → **Start from Dev Dashboard**. Name it (e.g.
+   `syncify (prod, read-only)` / `syncify (dev, read-write)`) and create.
+2. In the **Versions** tab: set **App URL** to
+   `https://shopify.dev/apps/default-app-home` (no embedded UI needed),
+   pick the newest webhooks API version, and add the scopes for that role
+   (Production's read-only list, or Dev's write list). Click **Release**.
+3. From the **Home** tab, **Install app** on the target store.
+4. In **Settings**, copy the **Client ID** and **Client secret** into `.env`
+   as `SHOPIFY_PROD_CLIENT_ID`/`SHOPIFY_PROD_CLIENT_SECRET` (or the `DEV`
+   equivalents) — leave `SHOPIFY_PROD_TOKEN`/`SHOPIFY_DEV_TOKEN` unset.
+
+Unlike Option A's permanent token, these don't work directly — `syncify`
+exchanges them for a short-lived (24h) Admin API access token itself, once
+at the start of each run, via Shopify's [client credentials
+grant](https://shopify.dev/docs/apps/build/authentication-authorization/client-credentials-grant).
+Nothing else about how you use `syncify` changes; this is purely an
+authentication detail handled internally by `src/config.ts`.
 
 **Theme sync auth is separate.** `syncify theme` shells out to the `shopify`
 CLI (`shopify theme pull` / `push`), which does not accept the Admin API
