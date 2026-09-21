@@ -56,8 +56,13 @@ below are designed to catch.
 4. Grant only these scopes, and nothing under a `write_*` heading:
    - `read_products`
    - `read_online_store_pages`
-   - `read_metafields`
    - `read_discounts`
+
+   No scope is needed for shop-level metafields — Shopify doesn't have a
+   `read_metafields`/`write_metafields` scope (that was removed; don't
+   confuse it with `read_metaobjects`/`write_metaobjects`, which is for the
+   unrelated Metaobjects feature). Shop metafields are readable/writable to
+   any installed custom app token by default.
 5. Save, then go to the **API credentials** tab and click **Install app**
    (confirm the install).
 6. Under **Admin API access token**, click **Reveal token once** and copy it
@@ -73,8 +78,10 @@ Repeat the same steps in the **Dev** store admin, naming the app e.g.
 
 - `write_products`
 - `write_online_store_pages`
-- `write_metafields`
 - `write_discounts`
+
+(Same note as above — no `write_metafields` scope exists; shop metafields
+don't need one.)
 
 Copy the revealed token into `.env` as `SHOPIFY_DEV_TOKEN`, and set
 `SHOPIFY_DEV_STORE` to the Dev store's `*.myshopify.com` domain.
