@@ -72,6 +72,7 @@ export async function runInit(flags: InitFlags): Promise<void> {
     resources,
     themeSync: 'cli',
     productTitlePrefix: '[DEV] ',
+    themeIgnorePatterns: [],
     guard: {
       allowedDestinations: [to],
       allowedDevPlanNames: ['Developer Preview', 'Basic App Development', 'Partner test store', 'Development', 'Trial'],

@@ -4,6 +4,7 @@
   "resources": ["products", "theme", "metafields", "metaobjects", "content", "discounts", "files", "menus", "articles"],
   "themeSync": "cli",
   "productTitlePrefix": "[DEV] ",
+  "themeIgnorePatterns": [],
   "guard": {
     "allowedDestinations": ["dev-store.myshopify.com"],
     "allowedDevPlanNames": ["Developer Preview", "Basic App Development", "Partner test store", "Development", "Trial"]

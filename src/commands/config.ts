@@ -1,7 +1,7 @@
 import { loadRc, saveRc, SyncifyRc } from '../config.js';
 import { logger } from '../logger.js';
 
-const ARRAY_KEYS = ['resources', 'guard.allowedDestinations', 'guard.allowedDevPlanNames'];
+const ARRAY_KEYS = ['resources', 'guard.allowedDestinations', 'guard.allowedDevPlanNames', 'themeIgnorePatterns'];
 
 function getPath(obj: any, path: string): unknown {
   return path.split('.').reduce((acc, key) => acc?.[key], obj);

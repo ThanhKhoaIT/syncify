@@ -39,8 +39,13 @@ export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
       return { resource: 'theme', planned: 1, applied: 0, skipped: 0, notes };
     }
 
+    const ignoreArgs = ctx.config.themeIgnorePatterns.flatMap((pattern) => ['--ignore', pattern]);
+    if (ignoreArgs.length > 0) {
+      notes.push(`Skipping push of ${ctx.config.themeIgnorePatterns.length} file pattern(s) (themeIgnorePatterns): ${ctx.config.themeIgnorePatterns.join(', ')}`);
+    }
+
     logger.step(`Pushing theme to ${ctx.config.devStore}...`);
-    await run('shopify', ['theme', 'push', '--store', ctx.config.devStore, '--path', tmpDir, '--allow-live']);
+    await run('shopify', ['theme', 'push', '--store', ctx.config.devStore, '--path', tmpDir, '--allow-live', ...ignoreArgs]);
 
     rmSync(tmpDir, { recursive: true, force: true });
     return { resource: 'theme', planned: 1, applied: 1, skipped: 0, notes };

@@ -17,6 +17,13 @@ export interface SyncifyRc {
   // products are unmistakable from real Dev-created ones at a glance. Set
   // to "" to disable.
   productTitlePrefix: string;
+  // Passed as `--ignore <pattern>` to `shopify theme push`, one flag per
+  // entry (wildcards allowed). For template/section files whose settings
+  // reference a Production-only resource shopify theme push hard-rejects
+  // (e.g. a shop-hosted video by GID) — there's no reliable way to resolve
+  // those to the equivalent Dev resource, so skipping the file is the only
+  // way to let the rest of the theme push through.
+  themeIgnorePatterns: string[];
 }
 
 export interface ResolvedConfig extends SyncifyRc {
@@ -112,9 +119,10 @@ export async function resolveConfig(): Promise<ResolvedConfig> {
 
   return {
     ...rc,
-    // Backward-compatible default for .syncifyrc.json files written before
-    // this field existed.
+    // Backward-compatible defaults for .syncifyrc.json files written before
+    // these fields existed.
     productTitlePrefix: rc.productTitlePrefix ?? '[DEV] ',
+    themeIgnorePatterns: rc.themeIgnorePatterns ?? [],
     prodStore: rc.from.store,
     prodToken,
     devStore: rc.to.store,

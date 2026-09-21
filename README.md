@@ -234,12 +234,32 @@ Sync `content` alone and a page assigned to a custom template will still
 create fine on Dev, but Shopify falls back to the default page template
 until the matching theme file exists there too.
 
+**Section settings that reference a Production-only resource by ID** — an
+`image_picker` or `video` setting in a section's JSON typically stores a
+`gid://shopify/...` reference, which only exists on Production. `theme push`
+can hard-reject the push for a file with a broken `video` reference (error:
+`Setting 'video' value does not point to an applicable shopify-hosted video
+resource`), or silently leave an `image_picker` setting empty. Unlike
+product/collection/page menu links, there's no stable handle to resolve
+these against (same root problem as the Files resource — no stable
+cross-store identity for media), so this can't be auto-fixed. Work around a
+hard-rejecting file with `themeIgnorePatterns` in `.syncifyrc.json`:
+
+```sh
+syncify config set themeIgnorePatterns "templates/page.our-story.json,templates/index.json"
+```
+
+Passed straight through as `--ignore <pattern>` flags to `shopify theme
+push` (wildcards allowed) — the listed files are skipped so the rest of the
+theme still pushes, at the cost of those specific files staying stale on
+Dev until manually updated.
+
 ## Known limitations
 
 - **Inventory levels** are not synced (would require mapping locations
   between the two stores).
-- **Variant-level metafields** are not synced yet — shop-level and
-  product-level metafields are.
+- **Variant-level metafields** are not synced yet — shop-level,
+  product-level, and page-level metafields are.
 - **Product images** sync via `productCreateMedia`, but only the first time
   a product has no media on Dev — re-running never duplicates, but an image
   added/changed on Production after that first sync won't propagate. Video

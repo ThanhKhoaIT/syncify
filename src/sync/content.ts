@@ -1,19 +1,36 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 
+interface Metafield {
+  namespace: string;
+  key: string;
+  type: string;
+  value: string;
+}
+
 interface Page {
   handle: string;
   title: string;
   body: string;
   isPublished: boolean;
   templateSuffix: string | null;
+  metafields: { nodes: Metafield[] };
 }
 
 const PAGES_QUERY = `#graphql
   query Pages($cursor: String) {
     pages(first: 50, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { handle title body isPublished templateSuffix }
+      nodes {
+        handle
+        title
+        body
+        isPublished
+        templateSuffix
+        metafields(first: 250) {
+          nodes { namespace key type value }
+        }
+      }
     }
   }
 `;
@@ -40,6 +57,17 @@ const PAGE_UPDATE = `#graphql
   mutation PageUpdate($id: ID!, $page: PageUpdateInput!) {
     pageUpdate(id: $id, page: $page) {
       page { id handle }
+      userErrors { field message }
+    }
+  }
+`;
+
+// Page-level metafields, upserted right after the page is created/updated.
+// Uses metafieldsSet (25 per call), same as shop and product metafields.
+const METAFIELDS_SET_MUTATION = `#graphql
+  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields { id namespace key }
       userErrors { field message }
     }
   }
@@ -96,8 +124,25 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
     const payload = existingId ? result.pageUpdate : result.pageCreate;
     if (payload.userErrors?.length) {
       notes.push(`Page "${page.handle}": ${JSON.stringify(payload.userErrors)}`);
-    } else {
-      applied += 1;
+      bar.tick();
+      continue;
+    }
+    applied += 1;
+
+    const devPageId = payload.page.id;
+    const metafields = page.metafields.nodes;
+    for (let i = 0; i < metafields.length; i += 25) {
+      const batch = metafields.slice(i, i + 25).map((mf) => ({
+        ownerId: devPageId,
+        namespace: mf.namespace,
+        key: mf.key,
+        type: mf.type,
+        value: mf.value,
+      }));
+      const mfResult: any = await ctx.dev.mutate(METAFIELDS_SET_MUTATION, { metafields: batch });
+      if (mfResult.metafieldsSet.userErrors?.length) {
+        notes.push(`Page "${page.handle}" metafields: ${JSON.stringify(mfResult.metafieldsSet.userErrors)}`);
+      }
     }
     bar.tick();
   }
