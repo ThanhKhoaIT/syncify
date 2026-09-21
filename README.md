@@ -209,6 +209,10 @@ until the matching theme file exists there too.
   between the two stores).
 - **Variant-level metafields** are not synced yet — shop-level and
   product-level metafields are.
+- **Product images** sync via `productCreateMedia`, but only the first time
+  a product has no media on Dev — re-running never duplicates, but an image
+  added/changed on Production after that first sync won't propagate. Video
+  and 3D model media are not synced, only images.
 - **Metaobject definition updates** aren't synced — only missing definitions
   are created on Dev; if a definition already exists there, changes to its
   fields on Production aren't propagated.

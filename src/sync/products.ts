@@ -16,6 +16,12 @@ interface Metafield {
   value: string;
 }
 
+interface MediaImageNode {
+  __typename: string;
+  alt: string | null;
+  image?: { url: string };
+}
+
 interface Product {
   handle: string;
   title: string;
@@ -27,6 +33,7 @@ interface Product {
   options: { name: string; values: string[] }[];
   variants: { nodes: Variant[] };
   metafields: { nodes: Metafield[] };
+  media: { nodes: MediaImageNode[] };
 }
 
 const PRODUCTS_QUERY = `#graphql
@@ -54,6 +61,13 @@ const PRODUCTS_QUERY = `#graphql
         metafields(first: 250) {
           nodes { namespace key type value }
         }
+        media(first: 50) {
+          nodes {
+            __typename
+            alt
+            ... on MediaImage { image { url } }
+          }
+        }
       }
     }
   }
@@ -77,8 +91,25 @@ const METAFIELDS_SET_MUTATION = `#graphql
 const PRODUCT_SET_MUTATION = `#graphql
   mutation ProductSet($input: ProductSetInput!) {
     productSet(input: $input, synchronous: true) {
-      product { id handle }
+      product {
+        id
+        handle
+        media(first: 1) { nodes { id } }
+      }
       userErrors { field message }
+    }
+  }
+`;
+
+// No natural key to match existing media against, so this only attaches
+// images the first time a product has none on Dev — re-running never
+// duplicates, but an image added/changed on Production after the first
+// sync won't propagate. Same tradeoff as the "files" resource.
+const PRODUCT_CREATE_MEDIA = `#graphql
+  mutation ProductCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+    productCreateMedia(productId: $productId, media: $media) {
+      media { id }
+      mediaUserErrors { field message }
     }
   }
 `;
@@ -89,6 +120,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     ctx.config.productTitlePrefix
       ? `Product titles are prefixed with "${ctx.config.productTitlePrefix}" on Dev (productTitlePrefix in .syncifyrc.json — set to "" to disable).`
       : 'productTitlePrefix is empty — product titles sync unprefixed.',
+    'Product images sync via productCreateMedia, but only the first time a product has no media on Dev — re-running never duplicates, but an image added/changed on Production after that first sync won\'t propagate. Video/3D model media is not synced, only images.',
   ];
   const products: Product[] = [];
   let cursor: string | null = null;
@@ -156,6 +188,18 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
       const mfResult: any = await ctx.dev.mutate(METAFIELDS_SET_MUTATION, { metafields: batch });
       if (mfResult.metafieldsSet.userErrors?.length) {
         notes.push(`Product "${product.handle}" metafields: ${JSON.stringify(mfResult.metafieldsSet.userErrors)}`);
+      }
+    }
+
+    const alreadyHasMedia = result.productSet.product.media.nodes.length > 0;
+    const images = product.media.nodes.filter((m) => m.__typename === 'MediaImage' && m.image?.url);
+    if (!alreadyHasMedia && images.length > 0) {
+      const mediaResult: any = await ctx.dev.mutate(PRODUCT_CREATE_MEDIA, {
+        productId: devProductId,
+        media: images.map((m) => ({ originalSource: m.image!.url, mediaContentType: 'IMAGE', alt: m.alt ?? undefined })),
+      });
+      if (mediaResult.productCreateMedia.mediaUserErrors?.length) {
+        notes.push(`Product "${product.handle}" media: ${JSON.stringify(mediaResult.productCreateMedia.mediaUserErrors)}`);
       }
     }
     bar.tick();
