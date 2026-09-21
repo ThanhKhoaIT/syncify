@@ -2,7 +2,7 @@ import prompts from 'prompts';
 import { ShopifyClient } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { assertSafeToWrite } from '../guard.js';
-import { logger } from '../logger.js';
+import { logger, setProgressBarsSuppressed } from '../logger.js';
 import { SyncContext, SyncResult } from '../types.js';
 import { syncProducts } from '../sync/products.js';
 import { syncTheme } from '../sync/theme.js';
@@ -34,6 +34,34 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
   collections: syncCollections,
 };
 
+// Always applied regardless of how the user lists/selects resources —
+// menus resolves Product/Collection/Page/Blog references by looking them
+// up on Dev by handle, so it must run after the resources that create
+// those records there; collections resolves manual membership the same
+// way via products. theme is a soft preference (page metafields feed
+// dynamic-source sections) rather than a hard dependency. Must contain
+// exactly the same keys as RUNNERS.
+const RESOURCE_ORDER = [
+  'products',
+  'collections',
+  'content',
+  'articles',
+  'metafields',
+  'metaobjects',
+  'discounts',
+  'files',
+  'theme',
+  'menus',
+];
+
+// Resources within the same phase have no dependency on each other, so run
+// concurrently; phases run in sequence. Mirrors RESOURCE_ORDER's reasoning.
+const RESOURCE_PHASES: string[][] = [
+  ['products', 'content', 'articles', 'metafields', 'metaobjects', 'discounts', 'files'],
+  ['collections'],
+  ['theme', 'menus'],
+];
+
 const RESOURCE_LABELS: Record<string, string> = {
   products: '📦 Products',
   theme: '🎨 Theme',
@@ -57,6 +85,8 @@ export async function runSync(flags: SyncFlags): Promise<void> {
   if (unknown.length > 0) {
     throw new Error(`Unknown resource(s): ${unknown.join(', ')}. Valid: ${Object.keys(RUNNERS).join(', ')}`);
   }
+
+  resources = RESOURCE_ORDER.filter((r) => resources.includes(r));
 
   const prod = new ShopifyClient({ store: config.prodStore, token: config.prodToken, role: 'prod' });
   const dev = new ShopifyClient({ store: config.devStore, token: config.devToken, role: 'dev' });
@@ -82,7 +112,7 @@ export async function runSync(flags: SyncFlags): Promise<void> {
         throw new Error('No resources selected — aborting. No writes were made.');
       }
 
-      resources = selected;
+      resources = RESOURCE_ORDER.filter((r) => selected.includes(r));
       logger.info(`Syncing: ${resources.join(', ')}`);
     }
   }
@@ -90,17 +120,40 @@ export async function runSync(flags: SyncFlags): Promise<void> {
   const ctx: SyncContext = { prod, dev, config, live };
   const results: SyncResult[] = [];
 
-  for (const resource of resources) {
-    logger.step(`\n${RESOURCE_LABELS[resource] ?? resource}`);
+  async function runOne(resource: string): Promise<void> {
+    const label = RESOURCE_LABELS[resource] ?? resource;
+    logger.step(`\n${label}`);
     const result = await RUNNERS[resource](ctx);
     results.push(result);
     const summary = live
-      ? `✅ ${result.applied} synced${result.skipped > 0 ? `, ${result.skipped} skipped` : ''} (${result.planned} total)`
-      : `📝 ${result.planned} would sync (dry-run)`;
+      ? `✅ ${label}: ${result.applied} synced${result.skipped > 0 ? `, ${result.skipped} skipped` : ''} (${result.planned} total)`
+      : `📝 ${label}: ${result.planned} would sync (dry-run)`;
     logger.info(summary);
     if (result.notes.length > 0) {
       result.notes.forEach((n) => logger.file(`${resource}: ${n}`));
       logger.info(`  (${result.notes.length} note(s) written to syncify.log)`);
+    }
+  }
+
+  for (const phase of RESOURCE_PHASES) {
+    const phaseResources = phase.filter((r) => resources.includes(r));
+    if (phaseResources.length === 0) continue;
+
+    if (phaseResources.length === 1) {
+      await runOne(phaseResources[0]);
+      continue;
+    }
+
+    // Concurrent phase: suppress live progress bars (multiple \r-based bars
+    // would otherwise fight over the same terminal line) and warn that
+    // per-resource log lines will interleave rather than appear as clean
+    // blocks — the tradeoff for actually running them in parallel.
+    logger.info(`\n⚡ Running ${phaseResources.length} independent resources in parallel — output below may interleave.`);
+    setProgressBarsSuppressed(true);
+    try {
+      await Promise.all(phaseResources.map((r) => runOne(r)));
+    } finally {
+      setProgressBarsSuppressed(false);
     }
   }
 

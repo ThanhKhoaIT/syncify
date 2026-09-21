@@ -1,5 +1,12 @@
 export type StoreRole = 'prod' | 'dev';
 
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
 export interface ShopifyClientOptions {
   store: string;
   token: string;
@@ -39,35 +46,59 @@ export class ShopifyClient {
     return this.request<T>(mutation, variables);
   }
 
+  // Shopify signals rate limiting two ways: an HTTP 429 (with a
+  // Retry-After header, in seconds), or — more commonly for GraphQL's
+  // cost-based leaky bucket — a 200 OK carrying a THROTTLED error in the
+  // body. Both are retried with exponential backoff; nothing else is
+  // (a real GraphQL/network error shouldn't silently retry and hide a bug).
   private async request<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    let res: Response;
-    try {
-      res = await fetch(this.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': this.token,
-        },
-        body: JSON.stringify({ query, variables }),
-      });
-    } catch (err) {
-      const cause = err instanceof Error && err.cause instanceof Error ? `: ${err.cause.message}` : '';
-      throw new Error(
-        `Network request to ${this.store} (${this.endpoint}) failed${cause}. Check the store domain is correct and reachable — this is not a Shopify API error.`,
-        { cause: err }
-      );
+    for (let attempt = 0; ; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch(this.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Access-Token': this.token,
+          },
+          body: JSON.stringify({ query, variables }),
+        });
+      } catch (err) {
+        const cause = err instanceof Error && err.cause instanceof Error ? `: ${err.cause.message}` : '';
+        throw new Error(
+          `Network request to ${this.store} (${this.endpoint}) failed${cause}. Check the store domain is correct and reachable — this is not a Shopify API error.`,
+          { cause: err }
+        );
+      }
+
+      if (res.status === 429) {
+        if (attempt >= MAX_RETRIES) {
+          throw new Error(`Shopify API request to ${this.store} was rate-limited (HTTP 429) ${MAX_RETRIES} times in a row — giving up.`);
+        }
+        const retryAfter = res.headers.get('Retry-After');
+        await sleep(retryAfter ? Number(retryAfter) * 1000 : BASE_DELAY_MS * 2 ** attempt);
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new Error(`Shopify API request to ${this.store} failed: ${res.status} ${res.statusText}`);
+      }
+
+      const json = (await res.json()) as { data?: T; errors?: Array<{ extensions?: { code?: string } }> };
+
+      if (json.errors?.some((e) => e.extensions?.code === 'THROTTLED')) {
+        if (attempt >= MAX_RETRIES) {
+          throw new Error(`Shopify API request to ${this.store} was rate-limited (THROTTLED) ${MAX_RETRIES} times in a row — giving up.`);
+        }
+        await sleep(BASE_DELAY_MS * 2 ** attempt);
+        continue;
+      }
+
+      if (json.errors && json.errors.length > 0) {
+        throw new Error(`GraphQL errors from ${this.store}: ${JSON.stringify(json.errors)}`);
+      }
+
+      return json.data as T;
     }
-
-    if (!res.ok) {
-      throw new Error(`Shopify API request to ${this.store} failed: ${res.status} ${res.statusText}`);
-    }
-
-    const json = (await res.json()) as { data?: T; errors?: unknown[] };
-
-    if (json.errors && json.errors.length > 0) {
-      throw new Error(`GraphQL errors from ${this.store}: ${JSON.stringify(json.errors)}`);
-    }
-
-    return json.data as T;
   }
 }

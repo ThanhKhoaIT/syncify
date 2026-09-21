@@ -62,6 +62,16 @@ export interface ProgressBar {
   done(): void;
 }
 
+// Set by sync.ts around a phase that runs multiple resources concurrently —
+// several \r-based bars writing to the same terminal line would otherwise
+// fight each other and garble the output. Falls back to the same periodic
+// plain-log behavior used for non-TTY output.
+let liveBarsSuppressed = false;
+
+export function setProgressBarsSuppressed(suppressed: boolean): void {
+  liveBarsSuppressed = suppressed;
+}
+
 // Renders `label [rainbow bar] current/total` on one line via \r: every cell
 // is colored from a red->violet hue sweep across the bar's position (not
 // just the filled portion), with a lightning bolt at the leading edge.
@@ -72,7 +82,7 @@ export function createProgressBar(total: number, label: string): ProgressBar {
     return { tick() {}, done() {} };
   }
 
-  const isTTY = Boolean(process.stdout.isTTY);
+  const isTTY = Boolean(process.stdout.isTTY) && !liveBarsSuppressed;
   const logEvery = Math.max(1, Math.floor(total / 10));
   let current = 0;
 

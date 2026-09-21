@@ -186,6 +186,26 @@ syncify -h | --help                   # or: syncify <command> -h
 `-h`/`--help` works at the top level and on every subcommand
 (`syncify sync -h`, `syncify init -h`, etc.).
 
+Resources always run in a fixed, dependency-safe order regardless of how
+you list or select them: `products → collections → content → articles →
+metafields → metaobjects → discounts → files → theme → menus`. `menus`
+resolves Product/Collection/Page/Blog references by handle on Dev, and
+`collections` resolves manual membership the same way via products — both
+need those resources to already exist on Dev to resolve correctly, so they
+always run last.
+
+Independent resources within that order run **concurrently** to reduce
+total sync time: `products`, `content`, `articles`, `metafields`,
+`metaobjects`, `discounts`, and `files` all run in parallel as one group;
+`collections` runs alone once products are done; `theme` and `menus` run in
+parallel as a final group. When more than one resource is running at once,
+their progress bars are suppressed (multiple would otherwise overwrite each
+other's line) and their log lines can interleave — each line is
+self-labeled with its resource, so it stays readable even out of order.
+`src/client.ts` retries rate-limited requests (HTTP 429 or a GraphQL
+`THROTTLED` error) with exponential backoff, up to 5 attempts, so the added
+concurrency doesn't turn transient rate limits into a failed run.
+
 ## Product title prefix
 
 Every product pushed to Dev has its title prefixed (default `"[DEV] "`), so
