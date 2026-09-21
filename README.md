@@ -1,8 +1,9 @@
 # syncify
 
 CLI to sync a Shopify **Production** store into a **Dev** store: products &
-variants, theme, shop metafields, Online Store pages, and basic discount
-codes. One-way only (Production → Dev), never the reverse.
+variants (with metafields), theme, shop metafields, metaobjects, Online
+Store pages, and basic discount codes. One-way only (Production → Dev),
+never the reverse.
 
 ## Setup
 
@@ -57,12 +58,13 @@ below are designed to catch.
    - `read_products`
    - `read_online_store_pages`
    - `read_discounts`
+   - `read_metaobjects`
+   - `read_metaobject_definitions`
 
-   No scope is needed for shop-level metafields — Shopify doesn't have a
-   `read_metafields`/`write_metafields` scope (that was removed; don't
-   confuse it with `read_metaobjects`/`write_metaobjects`, which is for the
-   unrelated Metaobjects feature). Shop metafields are readable/writable to
-   any installed custom app token by default.
+   No scope is needed for shop-level or product-level metafields — Shopify
+   doesn't have a `read_metafields`/`write_metafields` scope (that was
+   removed). Metaobjects are a separate feature and do need the two scopes
+   above — don't confuse the two.
 5. Save, then go to the **API credentials** tab and click **Install app**
    (confirm the install).
 6. Under **Admin API access token**, click **Reveal token once** and copy it
@@ -79,9 +81,11 @@ Repeat the same steps in the **Dev** store admin, naming the app e.g.
 - `write_products`
 - `write_online_store_pages`
 - `write_discounts`
+- `write_metaobjects`
+- `write_metaobject_definitions`
 
-(Same note as above — no `write_metafields` scope exists; shop metafields
-don't need one.)
+(Same note as above — no `write_metafields` scope exists; shop and product
+metafields don't need one, but metaobjects do.)
 
 Copy the revealed token into `.env` as `SHOPIFY_DEV_TOKEN`, and set
 `SHOPIFY_DEV_STORE` to the Dev store's `*.myshopify.com` domain.
@@ -142,8 +146,14 @@ syncify -h | --help                   # or: syncify <command> -h
 
 - **Inventory levels** are not synced (would require mapping locations
   between the two stores).
-- **Product/variant metafields** are not synced yet — only shop-level
-  metafields.
+- **Variant-level metafields** are not synced yet — shop-level and
+  product-level metafields are.
+- **Metaobject definition updates** aren't synced — only missing definitions
+  are created on Dev; if a definition already exists there, changes to its
+  fields on Production aren't propagated.
+- **Metaobject reference fields** (`metaobject_reference`, `product_reference`,
+  `file_reference`, etc.) are skipped — the GIDs they hold on Production
+  don't resolve to the same records on Dev. Only scalar fields sync.
 - **Blogs, articles, and navigation menus** are not synced yet — only Online
   Store pages.
 - **Discount codes** only cover basic percentage/fixed-amount codes (BXGY,
@@ -151,6 +161,7 @@ syncify -h | --help                   # or: syncify <command> -h
   is not idempotent: re-running will attempt to recreate codes and fail on
   duplicates.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
-  etc.) are pinned to API version `2024-10` in `src/client.ts` but should be
-  verified against a live schema introspection before the first real run —
-  Shopify revises these across versions.
+  `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`, etc.) are
+  pinned to API version `2024-10` in `src/client.ts` but should be verified
+  against a live schema introspection before the first real run — Shopify
+  revises these across versions.

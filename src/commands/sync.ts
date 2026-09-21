@@ -6,6 +6,7 @@ import { SyncContext, SyncResult } from '../types.js';
 import { syncProducts } from '../sync/products.js';
 import { syncTheme } from '../sync/theme.js';
 import { syncMetafields } from '../sync/metafields.js';
+import { syncMetaobjects } from '../sync/metaobjects.js';
 import { syncContent } from '../sync/content.js';
 import { syncDiscounts } from '../sync/discounts.js';
 
@@ -19,6 +20,7 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
   products: syncProducts,
   theme: syncTheme,
   metafields: syncMetafields,
+  metaobjects: syncMetaobjects,
   content: syncContent,
   discounts: syncDiscounts,
 };

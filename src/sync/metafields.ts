@@ -36,7 +36,7 @@ const METAFIELDS_SET_MUTATION = `#graphql
 
 export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   const notes: string[] = [
-    'Only shop-level metafields are synced in this version. Product/variant-level metafields are not yet implemented — track as follow-up work.',
+    'This module handles shop-level metafields only. Product metafields sync as part of the "products" resource (see sync/products.ts). Variant-level metafields are not yet implemented.',
   ];
   const all: Metafield[] = [];
   let cursor: string | null = null;

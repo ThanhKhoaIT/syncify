@@ -9,6 +9,13 @@ interface Variant {
   selectedOptions: { name: string; value: string }[];
 }
 
+interface Metafield {
+  namespace: string;
+  key: string;
+  type: string;
+  value: string;
+}
+
 interface Product {
   handle: string;
   title: string;
@@ -19,6 +26,7 @@ interface Product {
   status: string;
   options: { name: string; values: string[] }[];
   variants: { nodes: Variant[] };
+  metafields: { nodes: Metafield[] };
 }
 
 const PRODUCTS_QUERY = `#graphql
@@ -43,7 +51,21 @@ const PRODUCTS_QUERY = `#graphql
             selectedOptions { name value }
           }
         }
+        metafields(first: 250) {
+          nodes { namespace key type value }
+        }
       }
+    }
+  }
+`;
+
+// Product-level metafields, upserted right after productSet returns the dev
+// product's id. Uses metafieldsSet (25 per call), same as shop metafields.
+const METAFIELDS_SET_MUTATION = `#graphql
+  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields { id namespace key }
+      userErrors { field message }
     }
   }
 `;
@@ -112,8 +134,24 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     const result: any = await ctx.dev.mutate(PRODUCT_SET_MUTATION, { input });
     if (result.productSet.userErrors?.length) {
       notes.push(`Product "${product.handle}": ${JSON.stringify(result.productSet.userErrors)}`);
-    } else {
-      applied += 1;
+      continue;
+    }
+    applied += 1;
+
+    const devProductId = result.productSet.product.id;
+    const metafields = product.metafields.nodes;
+    for (let i = 0; i < metafields.length; i += 25) {
+      const batch = metafields.slice(i, i + 25).map((mf) => ({
+        ownerId: devProductId,
+        namespace: mf.namespace,
+        key: mf.key,
+        type: mf.type,
+        value: mf.value,
+      }));
+      const mfResult: any = await ctx.dev.mutate(METAFIELDS_SET_MUTATION, { metafields: batch });
+      if (mfResult.metafieldsSet.userErrors?.length) {
+        notes.push(`Product "${product.handle}" metafields: ${JSON.stringify(mfResult.metafieldsSet.userErrors)}`);
+      }
     }
   }
 
