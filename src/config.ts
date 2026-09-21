@@ -13,6 +13,10 @@ export interface SyncifyRc {
   resources: string[];
   themeSync: 'cli' | 'api';
   guard: GuardConfig;
+  // Prepended to every product title when writing to Dev, so synced
+  // products are unmistakable from real Dev-created ones at a glance. Set
+  // to "" to disable.
+  productTitlePrefix: string;
 }
 
 export interface ResolvedConfig extends SyncifyRc {
@@ -83,6 +87,9 @@ export function resolveConfig(): ResolvedConfig {
 
   return {
     ...rc,
+    // Backward-compatible default for .syncifyrc.json files written before
+    // this field existed.
+    productTitlePrefix: rc.productTitlePrefix ?? '[DEV] ',
     prodStore: rc.from.store,
     prodToken: env.prodToken,
     devStore: rc.to.store,

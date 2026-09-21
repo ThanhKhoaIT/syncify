@@ -86,6 +86,9 @@ const PRODUCT_SET_MUTATION = `#graphql
 export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
   const notes: string[] = [
     'Inventory levels are not synced (would require mapping locations between stores) — variants sync without stock quantities.',
+    ctx.config.productTitlePrefix
+      ? `Product titles are prefixed with "${ctx.config.productTitlePrefix}" on Dev (productTitlePrefix in .syncifyrc.json — set to "" to disable).`
+      : 'productTitlePrefix is empty — product titles sync unprefixed.',
   ];
   const products: Product[] = [];
   let cursor: string | null = null;
@@ -113,7 +116,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
   for (const product of products) {
     const input = {
       handle: product.handle,
-      title: product.title,
+      title: `${ctx.config.productTitlePrefix}${product.title}`,
       descriptionHtml: product.descriptionHtml,
       vendor: product.vendor,
       productType: product.productType,

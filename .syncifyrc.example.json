@@ -3,6 +3,7 @@
   "to": { "store": "dev-store.myshopify.com" },
   "resources": ["products", "theme", "metafields", "metaobjects", "content", "discounts", "files", "menus"],
   "themeSync": "cli",
+  "productTitlePrefix": "[DEV] ",
   "guard": {
     "allowedDestinations": ["dev-store.myshopify.com"],
     "allowedDevPlanNames": ["Developer Preview", "Basic App Development", "Partner test store", "Development", "Trial"]

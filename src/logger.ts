@@ -89,7 +89,7 @@ export function createProgressBar(total: number, label: string): ProgressBar {
         bar += chalk.hex(hslToHex(hue, 60, 25))('▱');
       }
     }
-    process.stdout.write(`\r${label} [${bar}] ${current}/${total}`);
+    process.stdout.write(`\r${label} [${bar}] ${current}/${total}  `);
   }
 
   if (isTTY) render();

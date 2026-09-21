@@ -153,6 +153,18 @@ syncify -h | --help                   # or: syncify <command> -h
 `-h`/`--help` works at the top level and on every subcommand
 (`syncify sync -h`, `syncify init -h`, etc.).
 
+## Product title prefix
+
+Every product pushed to Dev has its title prefixed (default `"[DEV] "`), so
+synced products are unmistakable from real Dev-created ones at a glance —
+matching is still by `handle`, so this doesn't affect idempotency. Change or
+disable it:
+
+```sh
+syncify config set productTitlePrefix "[STAGING] "
+syncify config set productTitlePrefix ""   # disable
+```
+
 ## Logging
 
 Per-resource console output stays to a summary line
@@ -185,11 +197,17 @@ instead of being cleaned up, so you can inspect `<path>/templates/` against
   `file_reference`, etc.) are skipped — the GIDs they hold on Production
   don't resolve to the same records on Dev. Only scalar fields sync.
 - **Blogs and articles** are not synced yet — only Online Store pages.
-- **Navigation menus**: only URL-based items sync (HTTP links, Frontpage,
-  Search, Catalog). Items linking to a specific resource (product,
-  collection, page, blog, article, metaobject, shop policy) are skipped
-  along with their sub-items — the GIDs they hold on Production don't
-  resolve to the same records on Dev.
+- **Navigation menus**: URL-based items (HTTP links, Frontpage, Search,
+  Catalog) sync as-is. Items linking to a Product, Collection, Page, or Blog
+  are resolved by handle — the matching record is looked up on Dev and
+  substituted in, on a `--live` run (not verified during dry-run, since that
+  would mean writes-adjacent reads happening before you've confirmed
+  anything). If no record with that handle exists on Dev yet, the item is
+  skipped and logged — sync the referenced resource first (e.g.
+  `--resources products` before `--resources menus`) and it'll resolve on
+  the next run. Items linking to an article, metaobject, shop policy,
+  customer account page, or "all collections" are always skipped along with
+  their sub-items — no reliable cross-store equivalent to resolve to.
 - **Discount codes** only cover basic percentage/fixed-amount codes (BXGY,
   free shipping, and automatic discounts are skipped and logged). This sync
   is not idempotent: re-running will attempt to recreate codes and fail on
