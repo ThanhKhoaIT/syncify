@@ -38,7 +38,7 @@ interface Definition {
 interface FieldValue {
   key: string;
   type: string;
-  value: string;
+  value: string | null;
 }
 
 interface Entry {
@@ -189,10 +189,13 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
   }
 
   for (const entry of entries) {
-    const scalarFields = entry.fields.filter((f) => !REFERENCE_FIELD_TYPES.has(f.type));
+    // Fields left empty on this entry come back with value: null — the
+    // mutation rejects a null value outright, so drop those along with
+    // reference-type fields rather than send them.
+    const scalarFields = entry.fields.filter((f) => !REFERENCE_FIELD_TYPES.has(f.type) && f.value !== null);
     const skippedFieldCount = entry.fields.length - scalarFields.length;
     if (skippedFieldCount > 0) {
-      notes.push(`Entry "${entry.type}/${entry.handle}": skipped ${skippedFieldCount} reference field(s).`);
+      notes.push(`Entry "${entry.type}/${entry.handle}": skipped ${skippedFieldCount} reference/empty field(s).`);
     }
 
     const result: any = await ctx.dev.mutate(ENTRY_UPSERT, {
