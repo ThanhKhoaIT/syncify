@@ -1,7 +1,7 @@
 {
   "from": { "store": "prod-store.myshopify.com" },
   "to": { "store": "dev-store.myshopify.com" },
-  "resources": ["products", "theme", "metafields", "metaobjects", "content", "discounts", "files", "menus"],
+  "resources": ["products", "theme", "metafields", "metaobjects", "content", "discounts", "files", "menus", "articles"],
   "themeSync": "cli",
   "productTitlePrefix": "[DEV] ",
   "guard": {

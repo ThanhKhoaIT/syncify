@@ -2,8 +2,9 @@
 
 CLI to sync a Shopify **Production** store into a **Dev** store: products &
 variants (with metafields), theme, shop metafields, metaobjects, files
-(images/videos/generic files), Online Store pages, navigation menus, and
-basic discount codes. One-way only (Production → Dev), never the reverse.
+(images/videos/generic files), Online Store pages, blogs & articles,
+navigation menus, and basic discount codes. One-way only (Production →
+Dev), never the reverse.
 
 ## Setup
 
@@ -67,7 +68,8 @@ below are designed to catch.
    No scope is needed for shop-level or product-level metafields — Shopify
    doesn't have a `read_metafields`/`write_metafields` scope (that was
    removed). Metaobjects are a separate feature and do need the two scopes
-   above — don't confuse the two.
+   above — don't confuse the two. `read_online_store_pages` despite the
+   name also covers `Blog`/`Article` — no separate scope needed for those.
 5. Save, then go to the **API credentials** tab and click **Install app**
    (confirm the install).
 6. Under **Admin API access token**, click **Reveal token once** and copy it
@@ -142,7 +144,7 @@ running `syncify sync --resources theme`.
 
 ```sh
 syncify init [--from <domain>] [--to <domain>] [--resources <list>]
-# resources: products, theme, metafields, metaobjects, content, discounts, files, menus
+# resources: products, theme, metafields, metaobjects, content, discounts, files, menus, articles
 syncify config list
 syncify config get <key>              # e.g. resources, guard.allowedDevPlanNames
 syncify config set <key> <value>      # comma-separate list values
@@ -196,7 +198,12 @@ instead of being cleaned up, so you can inspect `<path>/templates/` against
 - **Metaobject reference fields** (`metaobject_reference`, `product_reference`,
   `file_reference`, etc.) are skipped — the GIDs they hold on Production
   don't resolve to the same records on Dev. Only scalar fields sync.
-- **Blogs and articles** are not synced yet — only Online Store pages.
+- **Blogs and articles** (`articles` resource): matched by handle (blogs) and
+  by blog-handle + article-handle (articles), so re-running is idempotent.
+  Article images, comments, and article-level metafields are not synced.
+  Menu items of type `ARTICLE` still aren't resolved (see Navigation menus
+  below) even though articles now sync — that resolution isn't implemented
+  yet.
 - **Navigation menus**: URL-based items (HTTP links, Frontpage, Search,
   Catalog) sync as-is. Items linking to a Product, Collection, Page, or Blog
   are resolved by handle — the matching record is looked up on Dev and
@@ -217,7 +224,8 @@ instead of being cleaned up, so you can inspect `<path>/templates/` against
   create duplicate files on Dev.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
   `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`,
-  `MenuItemCreateInput`, `MenuItemUpdateInput`, etc.) are
+  `MenuItemCreateInput`, `MenuItemUpdateInput`, `BlogCreateInput`,
+  `ArticleCreateInput`, `ArticleUpdateInput`, etc.) are
   pinned to API version `2026-07` (the latest stable version as of writing)
   in `src/client.ts` but should be verified against a live schema
   introspection before the first real run — Shopify revises these across

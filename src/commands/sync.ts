@@ -12,6 +12,7 @@ import { syncContent } from '../sync/content.js';
 import { syncDiscounts } from '../sync/discounts.js';
 import { syncFiles } from '../sync/files.js';
 import { syncMenus } from '../sync/menus.js';
+import { syncArticles } from '../sync/articles.js';
 
 export interface SyncFlags {
   resources?: string;
@@ -28,6 +29,7 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
   discounts: syncDiscounts,
   files: syncFiles,
   menus: syncMenus,
+  articles: syncArticles,
 };
 
 export async function runSync(flags: SyncFlags): Promise<void> {
