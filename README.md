@@ -32,8 +32,9 @@ syncify init
 ```
 
 Prompts for the Production and Dev store domains and default resources,
-writes `.syncifyrc.json`, and scaffolds `.env` from `.env.example`. Fill in
-`.env` with your Admin API tokens (see below), then:
+writes `.syncifyrc.json` (this is where the store domains live — `.env`
+holds only the two secret tokens), and scaffolds `.env` from `.env.example`.
+Fill in `.env` with your Admin API tokens (see below), then:
 
 ```sh
 syncify sync              # dry-run — prints what would change, writes nothing
@@ -70,9 +71,9 @@ below are designed to catch.
    (confirm the install).
 6. Under **Admin API access token**, click **Reveal token once** and copy it
    immediately — Shopify only shows it this one time. Paste it into `.env` as
-   `SHOPIFY_PROD_TOKEN`. Set `SHOPIFY_PROD_STORE` to the store's
-   `*.myshopify.com` domain (shown at the top of the admin, or in
-   **Settings → Domains**).
+   `SHOPIFY_PROD_TOKEN`. The store's `*.myshopify.com` domain doesn't go in
+   `.env` — it's `from.store` in `.syncifyrc.json`, set by `syncify init`
+   (or `syncify config set from.store <domain>`).
 
 ### Getting the Dev token (`SHOPIFY_DEV_TOKEN`) — read-write
 
@@ -89,8 +90,8 @@ Repeat the same steps in the **Dev** store admin, naming the app e.g.
 (Same note as above — no `write_metafields` scope exists; shop and product
 metafields don't need one, but metaobjects do.)
 
-Copy the revealed token into `.env` as `SHOPIFY_DEV_TOKEN`, and set
-`SHOPIFY_DEV_STORE` to the Dev store's `*.myshopify.com` domain.
+Copy the revealed token into `.env` as `SHOPIFY_DEV_TOKEN`. As above, the
+Dev store's domain goes in `.syncifyrc.json`'s `to.store`, not `.env`.
 
 > If you ever need to rotate a token, revoke the old one from the same
 > **API credentials** tab (**Uninstall app** or delete it) and regenerate —
@@ -113,7 +114,10 @@ running `syncify sync --resources theme`.
    regardless of caller logic.
 3. **Config-time validation** (`src/config.ts`): refuses to run if
    `from.store === to.store`, if the two tokens are identical, or if
-   `to.store` isn't in `guard.allowedDestinations`.
+   `to.store` isn't in `guard.allowedDestinations`. Store domains have a
+   single source of truth (`.syncifyrc.json`) — only the two secret tokens
+   live in `.env` — so there's no separate "domain drift between two files"
+   check to make; there's only one file to get right.
 4. **Live destination guard** (`src/guard.ts`), run immediately before any
    write and **not skippable**: queries the Dev token's actual
    `shop.myshopifyDomain` and `shop.plan.displayName`, and aborts if the

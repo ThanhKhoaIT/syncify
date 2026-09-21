@@ -40,23 +40,17 @@ export function saveRc(rc: SyncifyRc): void {
 }
 
 interface EnvTokens {
-  prodStore: string;
   prodToken: string;
-  devStore: string;
   devToken: string;
 }
 
 function loadEnvTokens(): EnvTokens {
-  const prodStore = process.env.SHOPIFY_PROD_STORE;
   const prodToken = process.env.SHOPIFY_PROD_TOKEN;
-  const devStore = process.env.SHOPIFY_DEV_STORE;
   const devToken = process.env.SHOPIFY_DEV_TOKEN;
 
   const missing = (
     [
-      ['SHOPIFY_PROD_STORE', prodStore],
       ['SHOPIFY_PROD_TOKEN', prodToken],
-      ['SHOPIFY_DEV_STORE', devStore],
       ['SHOPIFY_DEV_TOKEN', devToken],
     ] as const
   )
@@ -73,7 +67,7 @@ function loadEnvTokens(): EnvTokens {
     throw new Error('SHOPIFY_PROD_TOKEN and SHOPIFY_DEV_TOKEN must not be identical — refusing to run.');
   }
 
-  return { prodStore: prodStore!, prodToken: prodToken!, devStore: devStore!, devToken: devToken! };
+  return { prodToken: prodToken!, devToken: devToken! };
 }
 
 export function resolveConfig(): ResolvedConfig {
@@ -83,25 +77,15 @@ export function resolveConfig(): ResolvedConfig {
   if (rc.from.store === rc.to.store) {
     throw new Error('.syncifyrc.json: "from.store" and "to.store" must not be the same store.');
   }
-  if (env.prodStore !== rc.from.store) {
-    throw new Error(
-      `SHOPIFY_PROD_STORE (${env.prodStore}) does not match .syncifyrc.json "from.store" (${rc.from.store}). Refusing to run.`
-    );
-  }
-  if (env.devStore !== rc.to.store) {
-    throw new Error(
-      `SHOPIFY_DEV_STORE (${env.devStore}) does not match .syncifyrc.json "to.store" (${rc.to.store}). Refusing to run.`
-    );
-  }
   if (!rc.guard.allowedDestinations.includes(rc.to.store)) {
     throw new Error(`"to.store" (${rc.to.store}) is not in guard.allowedDestinations. Refusing to run.`);
   }
 
   return {
     ...rc,
-    prodStore: env.prodStore,
+    prodStore: rc.from.store,
     prodToken: env.prodToken,
-    devStore: env.devStore,
+    devStore: rc.to.store,
     devToken: env.devToken,
   };
 }

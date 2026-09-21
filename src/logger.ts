@@ -25,17 +25,28 @@ export const logger = {
   },
 };
 
-const RAINBOW = ['#ff0000', '#ff7f00', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#8b00ff'];
 const BAR_WIDTH = 30;
+
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100;
+  l /= 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (x: number) => Math.round(255 * x).toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
 
 export interface ProgressBar {
   tick(amount?: number): void;
   done(): void;
 }
 
-// Renders `label [rainbow bar] current/total` on one line via \r. Falls back
-// to periodic plain log lines when stdout isn't a TTY (piped output, CI)
-// instead of spamming carriage returns into a log file.
+// Renders `label [rainbow bar] current/total` on one line via \r: every cell
+// is colored from a red->violet hue sweep across the bar's position (not
+// just the filled portion), with a lightning bolt at the leading edge.
+// Falls back to periodic plain log lines when stdout isn't a TTY (piped
+// output, CI) instead of spamming carriage returns into a log file.
 export function createProgressBar(total: number, label: string): ProgressBar {
   if (total === 0) {
     return { tick() {}, done() {} };
@@ -49,7 +60,14 @@ export function createProgressBar(total: number, label: string): ProgressBar {
     const filled = Math.round((current / total) * BAR_WIDTH);
     let bar = '';
     for (let i = 0; i < BAR_WIDTH; i++) {
-      bar += i < filled ? chalk.hex(RAINBOW[i % RAINBOW.length])('█') : chalk.dim('░');
+      const hue = (i / BAR_WIDTH) * 300;
+      if (i === filled - 1 && filled < BAR_WIDTH) {
+        bar += chalk.hex(hslToHex(hue, 100, 60)).bold('⚡');
+      } else if (i < filled) {
+        bar += chalk.hex(hslToHex(hue, 90, 55)).bold('▬');
+      } else {
+        bar += chalk.hex(hslToHex(hue, 60, 25))('▱');
+      }
     }
     process.stdout.write(`\r${label} [${bar}] ${current}/${total}`);
   }
