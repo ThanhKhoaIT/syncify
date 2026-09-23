@@ -14,6 +14,12 @@ interface Validation {
   value: string;
 }
 
+interface Access {
+  admin: string | null;
+  customerAccount: string;
+  storefront: string | null;
+}
+
 interface MetafieldDefinition {
   namespace: string;
   key: string;
@@ -22,6 +28,7 @@ interface MetafieldDefinition {
   ownerType: string;
   type: { name: string };
   validations: Validation[];
+  access: Access;
 }
 
 // Owner types covered for metafield *definitions* — matches the resources
@@ -54,6 +61,7 @@ const DEFINITIONS_QUERY = `#graphql
         ownerType
         type { name }
         validations { name value }
+        access { admin customerAccount storefront }
       }
     }
   }
@@ -68,11 +76,15 @@ const DEV_DEFINITIONS_QUERY = `#graphql
   }
 `;
 
-// NOTE: verify MetafieldDefinitionInput's exact shape via schema
-// introspection for the pinned apiVersion before the first live run. No
-// update path here yet — only missing definitions are created; changes to
-// an existing definition's fields on Production aren't propagated (same
-// limitation already documented for metaobject definitions).
+// NOTE: verify MetafieldDefinitionInput's exact shape (incl. `access`, used
+// to carry over storefront/admin/customerAccount visibility below — without
+// it a Dev definition would default to Shopify's own default access, which
+// may be more restrictive than Production's and silently return nothing to
+// a theme's Liquid) via schema introspection for the pinned apiVersion
+// before the first live run. No update path here yet — only missing
+// definitions are created; changes to an existing definition's fields on
+// Production aren't propagated (same limitation already documented for
+// metaobject definitions).
 const DEFINITION_CREATE = `#graphql
   mutation MetafieldDefinitionCreate($definition: MetafieldDefinitionInput!) {
     metafieldDefinitionCreate(definition: $definition) {
@@ -182,6 +194,11 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
           type: def.type.name,
           ownerType: def.ownerType,
           validations: def.validations.map((v) => ({ name: v.name, value: v.value })),
+          access: {
+            admin: def.access.admin ?? undefined,
+            customerAccount: def.access.customerAccount,
+            storefront: def.access.storefront ?? undefined,
+          },
         },
       });
       if (result.metafieldDefinitionCreate.userErrors?.length) {
@@ -206,7 +223,7 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
 export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   const notes = new Notes('metafields');
   notes.push(
-    `Metafield *definitions* are synced (create-only, no update path) for owner types: ${OWNER_TYPES.join(', ')} — this is what lets a theme's "Dynamic source" binding (e.g. product.metafields.<namespace>.<key>.value) resolve on Dev without needing to be skipped. metaobject_reference/mixed_reference definitions are skipped (see metaobjects.ts for why). Metafield *values*: shop-level values sync here; product-level values sync as part of the "products" resource (see sync/products.ts). Variant-level metafield values are not yet implemented, even though PRODUCTVARIANT definitions now sync.`
+    `Metafield *definitions* are synced (create-only, no update path) for owner types: ${OWNER_TYPES.join(', ')} — this is what lets a theme's "Dynamic source" binding (e.g. product.metafields.<namespace>.<key>.value) resolve on Dev without needing to be skipped. Each definition's access (admin/storefront/customerAccount visibility) is carried over too — without this a theme's Liquid could silently read nothing on Dev even with the value correctly synced, if Dev's definition defaulted to more restrictive access than Production's. metaobject_reference/mixed_reference definitions are skipped (see metaobjects.ts for why). Metafield *values*: shop-level values sync here; product-level values sync as part of the "products" resource (see sync/products.ts). Variant-level metafield values are not yet implemented, even though PRODUCTVARIANT definitions now sync.`
   );
 
   const definitionResult = await syncDefinitions(ctx, notes);

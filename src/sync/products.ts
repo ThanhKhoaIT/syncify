@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { MetafieldBatcher } from '../metafieldBatcher.js';
+import { OnlineStorePublisher } from '../publish.js';
 import { Notes } from '../notes.js';
 
 interface Variant {
@@ -162,6 +163,9 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     devCursor = data.products.pageInfo.hasNextPage ? data.products.pageInfo.endCursor : null;
   } while (devCursor);
 
+  const publisher = new OnlineStorePublisher(ctx.dev, notes, 'Products');
+  await publisher.init();
+
   let applied = 0;
   const metafieldBatcher = new MetafieldBatcher(ctx.dev, notes);
   const bar = createProgressBar(products.length, 'products');
@@ -223,6 +227,8 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
         notes.push(`Product "${product.handle}" media: ${JSON.stringify(mediaResult.productCreateMedia.mediaUserErrors)}`);
       }
     }
+
+    await publisher.publish(devProductId, `Product "${product.handle}"`);
     bar.tick();
   }
   bar.done();

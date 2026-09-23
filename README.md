@@ -70,6 +70,13 @@ instead.
    - `read_metaobject_definitions`
    - `read_files`
    - `read_online_store_navigation`
+   - `read_publications`
+
+   `read_publications` on this read-only token is unused in practice (see
+   sync/products.ts) — it's only actually needed on the Dev token, to find
+   and publish to the "Online Store" channel — but is required here too for
+   consistency with the scope check, which has no concept of a Dev-only
+   scope.
 
    No scope is needed for metafield *values* — Shopify doesn't have a
    `read_metafields`/`write_metafields` scope (that was removed). Metafield
@@ -99,6 +106,7 @@ Repeat for the **Dev** store (`SHOPIFY_DEV_TOKEN`, naming the app e.g.
 - `write_metaobject_definitions`
 - `write_files`
 - `write_online_store_navigation`
+- `write_publications`
 
 (Same note as above — no `write_metafields` scope exists for metafield
 *values*; metafield *definitions* need `write_products`/
@@ -274,6 +282,37 @@ syncify config set productTitlePrefix "[STAGING] "
 syncify config set productTitlePrefix ""   # disable
 ```
 
+## Publishing to the Online Store channel
+
+Creating or updating a product/collection via the Admin API (`productSet`,
+`collectionCreate`/`collectionUpdate`) never publishes it to any sales
+channel — a newly-created record has zero channels and simply won't show up
+on the Dev storefront (or anywhere else) until explicitly published,
+regardless of its own `status`/visibility field. After every product and
+collection upsert, syncify looks up the Dev store's "Online Store"
+`Publication` (`src/publish.ts`, shared by both) and calls
+`publishablePublish` to publish it there; this is safe to run on every sync
+(publishing an already-published record is a no-op, not an error). If no
+"Online Store" publication is found on Dev, this is logged once per
+resource and skipped — check that the Online Store sales channel is
+actually installed on the Dev store.
+
+Pages, articles, and blogs don't have this gotcha — they use their own
+`isPublished`/visibility field directly on the create/update mutation (see
+`content.ts`/`articles.ts`), no separate publish step needed. Metaobject
+entries carry their own visibility the same direct way: an entry whose
+definition has the "publishable" capability enabled has its
+`capabilities.publishable.status` (DRAFT/ACTIVE) synced, and one with the
+"onlineStore" capability has its `templateSuffix` synced too (see
+`metaobjects.ts`) — neither needs a separate publish call.
+
+A related but distinct gotcha: a metafield **definition**'s `access`
+(admin/storefront/customerAccount visibility) is synced along with the rest
+of the definition (see sync/metafields.ts, and "Known limitations" below)
+— without this, a theme's Liquid could read nothing from an
+otherwise-correctly-synced metafield value on Dev, if the newly-created Dev
+definition defaulted to more restrictive access than Production's.
+
 ## Logging
 
 Per-resource console output stays to a summary line
@@ -397,14 +436,17 @@ fixed on Production.
   product-level, and page-level metafield values are. Metafield
   *definitions* (the schema, not the data — see sync/metafields.ts) do sync
   for Product/ProductVariant/Collection/Page/Article/Blog/Shop owner types,
-  create-only like metaobject definitions; a definition existing on Dev is
-  what lets a theme's "Dynamic source" binding resolve, independent of
-  whether the underlying value is synced. A definition whose namespace is
-  owned by a different app (or created with a restricted access level) hard
-  denies with `ACCESS_DENIED` regardless of scopes — not fixable by adding
-  scope, since Shopify enforces per-namespace app ownership independent of
-  the resource-type scope. That's caught per-definition and logged/skipped
-  rather than aborting the rest of the resource.
+  create-only like metaobject definitions, including each definition's
+  `access` (admin/storefront/customerAccount visibility) so a theme's Liquid
+  isn't silently blocked from reading an otherwise-synced value; a
+  definition existing on Dev is what lets a theme's "Dynamic source" binding
+  resolve too, independent of whether the underlying value is synced. A
+  definition whose namespace is owned by a different app (or created with a
+  restricted access level) hard denies with `ACCESS_DENIED` regardless of
+  scopes — not fixable by adding scope, since Shopify enforces per-namespace
+  app ownership independent of the resource-type scope. That's caught
+  per-definition and logged/skipped rather than aborting the rest of the
+  resource.
 - **Product images** are reconciled on every sync: Dev's current media is
   deleted and Production's current images re-attached fresh via
   `productDeleteMedia`/`productCreateMedia` (media has no stable cross-store
@@ -427,6 +469,11 @@ fixed on Production.
 - **Metaobject definition updates** aren't synced — only missing definitions
   are created on Dev; if a definition already exists there, changes to its
   fields on Production aren't propagated.
+- **Metaobject entry visibility**: an entry's `capabilities.publishable.status`
+  (DRAFT/ACTIVE, only present when its definition has that capability
+  enabled) and `capabilities.onlineStore.templateSuffix` are synced, so a
+  DRAFT entry on Production stays hidden on Dev instead of defaulting to
+  whatever status `metaobjectUpsert` would otherwise pick.
 - **Metaobject reference fields**: `product_reference`, `collection_reference`,
   `page_reference`, and `variant_reference` (including their `list.*` forms)
   are resolved to the matching Dev-side record — matched by handle, or by

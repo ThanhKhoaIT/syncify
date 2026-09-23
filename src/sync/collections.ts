@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { OnlineStorePublisher } from '../publish.js';
 import { Notes } from '../notes.js';
 
 interface RuleSetRule {
@@ -149,6 +150,9 @@ export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
     devCursor = data.collections.pageInfo.hasNextPage ? data.collections.pageInfo.endCursor : null;
   } while (devCursor);
 
+  const publisher = new OnlineStorePublisher(ctx.dev, notes, 'Collections');
+  await publisher.init();
+
   let applied = 0;
   const bar = createProgressBar(collections.length, 'collections');
 
@@ -187,11 +191,11 @@ export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
       continue;
     }
     applied += 1;
+    const devCollectionId = payload.collection.id;
 
     // Manual collection membership — reconciled on every sync (add/remove
     // diffed by product handle) rather than only on first creation.
     if (!collection.ruleSet) {
-      const devCollectionId = payload.collection.id;
       const prodHandles = new Set(collection.products.nodes.map((p) => p.handle.normalize('NFC')));
 
       const devMembers = new Map<string, string>();
@@ -232,6 +236,7 @@ export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
       }
     }
 
+    await publisher.publish(devCollectionId, `Collection "${handle}"`);
     bar.tick();
   }
   bar.done();

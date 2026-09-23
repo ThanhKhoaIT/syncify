@@ -6,7 +6,14 @@ import { ShopifyClient } from './client.js';
 // in sync with the scope lists in README.md "Getting the Production/Dev
 // token" too, but update this map first and let the others follow it.
 export const RESOURCE_SCOPES: Record<string, string[]> = {
-  products: ['products'],
+  // `publications` is only actually used against the Dev token (find/write
+  // the "Online Store" channel so a synced product gets published there —
+  // productSet alone never publishes to any channel). Requiring
+  // read_publications on the read-only Production token too is unused in
+  // practice, but kept for consistency with every other entry here being
+  // symmetric read(prod)/write(dev) — the scope check has no asymmetric
+  // concept, and this is a harmless read-only grant either way.
+  products: ['products', 'publications'],
   theme: [], // shells out to the `shopify` CLI, which uses its own auth — not the Admin API token
   // Metafield *definitions* now span Product/ProductVariant/Collection
   // (products) and Page/Article/Blog (online_store_pages) owner types (see
@@ -19,7 +26,7 @@ export const RESOURCE_SCOPES: Record<string, string[]> = {
   files: ['files'],
   menus: ['online_store_navigation'],
   articles: ['online_store_pages'],
-  collections: ['products'],
+  collections: ['products', 'publications'], // see the `publications` comment on `products` above — same reasoning
 };
 
 // Every distinct scope subject across all resources, regardless of which

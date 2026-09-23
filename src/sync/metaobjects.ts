@@ -65,6 +65,14 @@ interface Entry {
   handle: string;
   type: string;
   fields: FieldValue[];
+  // Only present when the entry's definition has the corresponding
+  // capability enabled. publishable controls storefront visibility
+  // (DRAFT/ACTIVE); onlineStore.templateSuffix picks which theme template
+  // renders the entry.
+  capabilities: {
+    publishable: { status: string } | null;
+    onlineStore: { templateSuffix: string | null } | null;
+  };
 }
 
 // list.* field values are JSON-encoded arrays of GIDs; singular reference
@@ -168,6 +176,10 @@ const DEV_PAGES_HANDLE_QUERY = `#graphql
   }
 `;
 
+// NOTE: verify capabilities/publishable is queryable unconditionally (i.e.
+// returns null rather than erroring) for a definition that doesn't have the
+// "publishable" capability enabled, via schema introspection for the pinned
+// apiVersion before the first live run.
 const ENTRIES_QUERY = `#graphql
   query MetaobjectEntries($type: String!, $cursor: String) {
     metaobjects(type: $type, first: 50, after: $cursor) {
@@ -176,6 +188,7 @@ const ENTRIES_QUERY = `#graphql
         handle
         type
         fields { key type value }
+        capabilities { publishable { status } onlineStore { templateSuffix } }
       }
     }
   }
@@ -197,6 +210,9 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
   const notes = new Notes('metaobjects');
   notes.push(
     'product_reference/collection_reference/page_reference/variant_reference fields are resolved to the matching Dev-side record (matched by handle, or handle+SKU for variants) instead of being dropped; a reference whose target hasn\'t synced to Dev (or no longer exists) is still dropped and logged. metaobject_reference/mixed_reference/file_reference fields are dropped from both definitions and entries — the first two would need the field definition itself to declare a target Dev-side metaobject definition, which requires creating definitions in dependency order plus an update path for existing ones (not implemented); file_reference can\'t be matched at all since files have no stable cross-store handle. A definition left with zero fields after dropping those is skipped entirely.'
+  );
+  notes.push(
+    'An entry\'s publishable status (DRAFT/ACTIVE, only present when its definition has the "publishable" capability enabled) is synced — a DRAFT entry on Production stays hidden from the Dev storefront instead of defaulting to whatever status metaobjectUpsert would otherwise pick. Its onlineStore.templateSuffix (which theme template renders it, when the "onlineStore" capability is enabled) is synced too.'
   );
 
   const definitions: Definition[] = [];
@@ -416,9 +432,17 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
       notes.push(`Entry "${entry.type}/${entry.handle}": skipped ${droppedParts.join(', ')}.`);
     }
 
+    const metaobject: any = { fields };
+    if (entry.capabilities.publishable || entry.capabilities.onlineStore) {
+      metaobject.capabilities = {
+        ...(entry.capabilities.publishable && { publishable: { status: entry.capabilities.publishable.status } }),
+        ...(entry.capabilities.onlineStore && { onlineStore: { templateSuffix: entry.capabilities.onlineStore.templateSuffix } }),
+      };
+    }
+
     const result: any = await ctx.dev.mutate(ENTRY_UPSERT, {
       handle: { type: entry.type, handle: entry.handle },
-      metaobject: { fields },
+      metaobject,
     });
     if (result.metaobjectUpsert.userErrors?.length) {
       notes.push(`Entry "${entry.type}/${entry.handle}": ${JSON.stringify(result.metaobjectUpsert.userErrors)}`);
