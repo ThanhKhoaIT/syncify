@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { runInit } from './commands/init.js';
+import { runInitApps } from './commands/init-apps.js';
 import { runConfigGet, runConfigList, runConfigSet } from './commands/config.js';
 import { runSync } from './commands/sync.js';
 import { logger } from './logger.js';
@@ -29,6 +30,14 @@ program
   )
   .action(async (opts) => {
     await runInit(opts);
+  });
+
+program
+  .command('init-apps')
+  .description('Generate local shopify.app.toml templates for a read-only (Production) and a write (Dev) app — no Shopify API calls, nothing created remotely')
+  .option('--path <dir>', 'Directory to generate the app folders in', 'apps')
+  .action(async (opts) => {
+    await runInitApps(opts);
   });
 
 const config = program.command('config').description('Read/write .syncifyrc.json');

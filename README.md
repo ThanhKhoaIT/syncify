@@ -111,7 +111,23 @@ Store domains don't go in `.env` — they're `from.store`/`to.store` in
 
 Required for any app created on or after 2026-01-01. Same scope lists as
 Option A above (read-only set for Production, write set for Dev) — only the
-creation flow and credential shape differ:
+creation flow and credential shape differ.
+
+`syncify init-apps` generates local `shopify.app.toml` templates for both
+apps (correct name, scopes, and `application_url` already filled in from
+the same scope list the runtime scope check uses — see `src/scopes.ts`) so
+you don't have to click through the scope list by hand:
+
+```sh
+syncify init-apps                # writes apps/syncify-read/shopify.app.toml and apps/syncify-write/shopify.app.toml
+syncify init-apps --path <dir>   # generate somewhere other than ./apps
+```
+
+This only writes local files — it makes no Shopify API calls and creates
+nothing remotely. Each generated file's header comment has the exact
+commands to actually create/link and deploy it (`shopify app init`/`config
+link` + `shopify app deploy`), which you run yourself. Or skip the CLI
+entirely and follow the manual steps below:
 
 1. Go to [dev.shopify.com/dashboard](https://dev.shopify.com/dashboard) →
    **Create app** → **Start from Dev Dashboard**. Name it (e.g.
@@ -176,6 +192,7 @@ running `syncify sync --resources theme`.
 ```sh
 syncify init [--from <domain>] [--to <domain>] [--resources <list>]
 # resources: products, theme, metafields, metaobjects, content, discounts, files, menus, articles, collections
+syncify init-apps [--path <dir>]      # generate shopify.app.toml templates (local files only, see Authentication)
 syncify config list
 syncify config get <key>              # e.g. resources, guard.allowedDevPlanNames
 syncify config set <key> <value>      # comma-separate list values

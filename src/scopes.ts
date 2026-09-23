@@ -1,9 +1,11 @@
 import { ShopifyClient } from './client.js';
 
 // Scope "subject" per resource — expanded to read_<subject> (Production)
-// and write_<subject> (Dev). Kept in sync with the scope lists in
-// README.md "Getting the Production/Dev token".
-const RESOURCE_SCOPES: Record<string, string[]> = {
+// and write_<subject> (Dev). Single source of truth, shared by the runtime
+// scope check below and `syncify init-apps`' generated app configs — kept
+// in sync with the scope lists in README.md "Getting the Production/Dev
+// token" too, but update this map first and let the others follow it.
+export const RESOURCE_SCOPES: Record<string, string[]> = {
   products: ['products'],
   theme: [], // shells out to the `shopify` CLI, which uses its own auth — not the Admin API token
   metafields: [], // shop/product metafields need no dedicated scope
@@ -15,6 +17,11 @@ const RESOURCE_SCOPES: Record<string, string[]> = {
   articles: ['online_store_pages'],
   collections: ['products'],
 };
+
+// Every distinct scope subject across all resources, regardless of which
+// ones are selected for a given sync run — used to generate an app config
+// that covers everything syncify might ever need.
+export const ALL_SCOPE_SUBJECTS = [...new Set(Object.values(RESOURCE_SCOPES).flat())].sort();
 
 const CURRENT_APP_SCOPES_QUERY = `#graphql
   query CurrentAppScopes {
