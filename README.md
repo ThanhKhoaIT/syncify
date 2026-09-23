@@ -311,8 +311,13 @@ can hard-reject the push for a file with a broken `video` reference (error:
 resource`), or silently leave an `image_picker` setting empty. Unlike
 product/collection/page menu links, there's no stable handle to resolve
 these against (same root problem as the Files resource — no stable
-cross-store identity for media), so this can't be auto-fixed. Work around a
-hard-rejecting file with `themeIgnorePatterns` in `.syncifyrc.json`:
+cross-store identity for media), so the broken value itself can't be
+auto-fixed. `themeAutoSkipOnError` (below) does recognize this specific
+`Setting '...' value does not point to...` error and auto-skips
+`config/settings_data.json` on retry, so it no longer has to be added to
+`themeIgnorePatterns` by hand — but the setting stays stale on Dev either
+way until the underlying file exists there. Work around a hard-rejecting
+file with `themeIgnorePatterns` in `.syncifyrc.json`:
 
 ```sh
 syncify config set themeIgnorePatterns "templates/page.our-story.json,templates/index.json"

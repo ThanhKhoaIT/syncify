@@ -45,6 +45,13 @@ function runCaptured(cmd: string, args: string[]): Promise<CapturedResult> {
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
 const THEME_FILE_PATTERN = /^(sections|snippets|templates|layout|config|locales|assets|blocks)\/[^\s│]+\.\w+$/;
 
+// A theme `video`/`image_picker`/`video_url` setting whose value points at a
+// Production-only file (no stable cross-store identity to resolve it
+// against — same root problem as the Files resource, see README "Known
+// limitations") hard-rejects the push without naming a file path at all —
+// the broken value actually lives in config/settings_data.json.
+const SETTING_VALUE_ERROR_PATTERN = /^Setting '.+' value does not point to/i;
+
 // Parses `shopify theme push`'s boxed error output (╭─ error ─╮ ... ╰─╯) for
 // theme file paths mentioned inside any error box, regardless of which line
 // they're on — best-effort, since the exact format isn't guaranteed stable
@@ -69,6 +76,8 @@ function extractFailedFilePaths(output: string): string[] {
       const content = line.replace(/^│/, '').replace(/│$/, '').trim();
       if (THEME_FILE_PATTERN.test(content)) {
         paths.add(content);
+      } else if (SETTING_VALUE_ERROR_PATTERN.test(content)) {
+        paths.add('config/settings_data.json');
       }
     }
   }
