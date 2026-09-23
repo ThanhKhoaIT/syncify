@@ -439,10 +439,14 @@ fixed on Production.
   for Product/ProductVariant/Collection/Page/Article/Blog/Shop owner types,
   create-only like metaobject definitions, including each definition's
   `access` (admin/storefront/customerAccount visibility) so a theme's Liquid
-  isn't silently blocked from reading an otherwise-synced value; a
-  definition existing on Dev is what lets a theme's "Dynamic source" binding
-  resolve too, independent of whether the underlying value is synced. A
-  definition whose namespace is owned by a different app (or created with a
+  isn't silently blocked from reading an otherwise-synced value — except
+  `access.admin` of `PUBLIC_READ`/`PUBLIC_READ_WRITE`/`PRIVATE`, which
+  `metafieldDefinitionCreate` doesn't accept at all (only `MERCHANT_READ`/
+  `MERCHANT_READ_WRITE` are settable this way); those are created with admin
+  access left unset instead, logged per-definition. A definition existing on
+  Dev is what lets a theme's "Dynamic source" binding resolve too,
+  independent of whether the underlying value is synced. A definition whose
+  namespace is owned by a different app (or created with a
   restricted access level) hard denies with `ACCESS_DENIED` regardless of
   scopes — not fixable by adding scope, since Shopify enforces per-namespace
   app ownership independent of the resource-type scope. That's caught

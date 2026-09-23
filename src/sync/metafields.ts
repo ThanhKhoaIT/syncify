@@ -50,10 +50,16 @@ const OWNER_TYPES = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'PAGE', 'ARTICLE
 // file_reference's file_type) are plain values, portable as-is.
 const UNRESOLVABLE_DEFINITION_TYPES = new Set(['metaobject_reference', 'list.metaobject_reference', 'mixed_reference', 'list.mixed_reference']);
 
-// access.admin reads back values (e.g. PUBLIC_READ_WRITE, the default for
-// merchant-created definitions) that MetafieldDefinitionInput doesn't
-// accept — only the two MERCHANT_* values are settable. Anything else is
-// left unset so Dev gets the same default.
+// metafieldDefinitionCreate only accepts these two for `access.admin` —
+// PUBLIC_READ/PUBLIC_READ_WRITE (readable/writable by other apps, not just
+// the merchant) and PRIVATE aren't settable this way, confirmed by Shopify
+// rejecting them outright (not merely a documentation gap): "Expected
+// '<value>' to be one of: MERCHANT_READ, MERCHANT_READ_WRITE". A
+// Production definition using one of the unsettable values is created with
+// `access.admin` omitted (Shopify's own default) rather than guessing a
+// substitute — no scope or fix can grant broader admin access than this
+// mutation allows. Exported: sync/relink.ts also needs this when
+// re-setting a metafield definition's access.
 export function adminAccessInput(admin: string | null): string | undefined {
   return admin === 'MERCHANT_READ' || admin === 'MERCHANT_READ_WRITE' ? admin : undefined;
 }
@@ -176,6 +182,13 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
       continue;
     }
 
+    const adminAccess = adminAccessInput(def.access.admin);
+    if (def.access.admin && !adminAccess) {
+      notes.push(
+        `Definition "${def.ownerType}/${def.namespace}.${def.key}": admin access "${def.access.admin}" isn't settable via metafieldDefinitionCreate (only MERCHANT_READ/MERCHANT_READ_WRITE are accepted) — created with admin access unset (Shopify's own default) instead.`
+      );
+    }
+
     // metafieldDefinitionCreate can hard-fail with a top-level GraphQL
     // ACCESS_DENIED error (client.ts throws on that, not a userErrors
     // array) when the namespace is owned by a different app, or was
@@ -195,7 +208,7 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
           ownerType: def.ownerType,
           validations: def.validations.map((v) => ({ name: v.name, value: v.value })),
           access: {
-            admin: adminAccessInput(def.access.admin),
+            admin: adminAccess,
             customerAccount: def.access.customerAccount,
             storefront: def.access.storefront ?? undefined,
           },
@@ -223,7 +236,7 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
 export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   const notes = new Notes('metafields');
   notes.push(
-    `Metafield *definitions* are synced (create-only, no update path) for owner types: ${OWNER_TYPES.join(', ')} — this is what lets a theme's "Dynamic source" binding (e.g. product.metafields.<namespace>.<key>.value) resolve on Dev without needing to be skipped. Each definition's access (admin/storefront/customerAccount visibility) is carried over too — without this a theme's Liquid could silently read nothing on Dev even with the value correctly synced, if Dev's definition defaulted to more restrictive access than Production's. metaobject_reference/mixed_reference definitions are skipped (see metaobjects.ts for why). Metafield *values*: shop-level values sync here; product-level values sync as part of the "products" resource (see sync/products.ts). Variant-level metafield values are not yet implemented, even though PRODUCTVARIANT definitions now sync.`
+    `Metafield *definitions* are synced (create-only, no update path) for owner types: ${OWNER_TYPES.join(', ')} — this is what lets a theme's "Dynamic source" binding (e.g. product.metafields.<namespace>.<key>.value) resolve on Dev without needing to be skipped. Each definition's access (admin/storefront/customerAccount visibility) is carried over too — without this a theme's Liquid could silently read nothing on Dev even with the value correctly synced, if Dev's definition defaulted to more restrictive access than Production's. A PUBLIC_READ/PUBLIC_READ_WRITE/PRIVATE admin access value isn't settable via metafieldDefinitionCreate at all (Shopify only accepts MERCHANT_READ/MERCHANT_READ_WRITE here) — created with admin access left unset instead, logged per-definition. metaobject_reference/mixed_reference definitions are skipped (see metaobjects.ts for why). Metafield *values*: shop-level values sync here; product-level values sync as part of the "products" resource (see sync/products.ts). Variant-level metafield values are not yet implemented, even though PRODUCTVARIANT definitions now sync.`
   );
 
   const definitionResult = await syncDefinitions(ctx, notes);
