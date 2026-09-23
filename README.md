@@ -245,6 +245,16 @@ bulk mutation** in Shopify's Admin API — confirmed against the docs, not
 assumed — so those stay one API call per item; there's no batching
 available there to speed them up.
 
+`MetafieldBatcher` also checks each value's byte size against Shopify's
+hard 131072-byte (128 KiB) per-metafield limit *before* sending — an
+oversized value (typically a large `json`/`multi_line_text_field`/
+`rich_text_field`) is skipped with a specific note (which field, which
+owner, how many bytes) instead of failing at the API and only reporting a
+generic error, potentially against the wrong item in a mixed batch. Errors
+from Shopify itself are also attributed back to the specific owner/field
+that caused them, not just "something in this batch of up to 25 across N
+owners."
+
 ## Product title prefix
 
 Every product pushed to Dev has its title prefixed (default `"[DEV] "`), so

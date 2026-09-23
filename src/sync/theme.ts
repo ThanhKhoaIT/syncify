@@ -103,17 +103,25 @@ export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
       notes.push(`Skipping push of ${ignorePatterns.length} file pattern(s) (themeIgnorePatterns): ${ignorePatterns.join(', ')}`);
     }
 
-    logger.step(`Pushing theme to ${ctx.config.devStore}...`);
-    let pushResult = await runCaptured('shopify', [
+    // --live selects the target (the store's published theme, matching what
+    // --live pulled from Production); --allow-live is the separate
+    // permission gate required to push to it non-interactively. Both are
+    // required — shopify CLI rejects a non-interactive push with neither a
+    // target flag (--live/--development/--theme/--unpublished) specified.
+    const pushArgs = (extraIgnores: string[]) => [
       'theme',
       'push',
       '--store',
       ctx.config.devStore,
       '--path',
       tmpDir,
+      '--live',
       '--allow-live',
-      ...ignorePatterns.flatMap((p) => ['--ignore', p]),
-    ]);
+      ...[...ignorePatterns, ...extraIgnores].flatMap((p) => ['--ignore', p]),
+    ];
+
+    logger.step(`Pushing theme to ${ctx.config.devStore}...`);
+    let pushResult = await runCaptured('shopify', pushArgs([]));
 
     if (pushResult.code !== 0 && ctx.config.themeAutoSkipOnError) {
       const failedPaths = extractFailedFilePaths(pushResult.output).filter((p) => !ignorePatterns.includes(p));
@@ -125,16 +133,7 @@ export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
             'These files are now stale on Dev — fix the underlying issue on Production and re-sync.'
         );
 
-        pushResult = await runCaptured('shopify', [
-          'theme',
-          'push',
-          '--store',
-          ctx.config.devStore,
-          '--path',
-          tmpDir,
-          '--allow-live',
-          ...[...ignorePatterns, ...failedPaths].flatMap((p) => ['--ignore', p]),
-        ]);
+        pushResult = await runCaptured('shopify', pushArgs(failedPaths));
       } else {
         notes.push('themeAutoSkipOnError is on, but no recognizable file path could be parsed from the push failure — could not auto-retry.');
       }
