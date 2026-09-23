@@ -371,16 +371,24 @@ fixed on Production.
 - **Metaobject definition updates** aren't synced — only missing definitions
   are created on Dev; if a definition already exists there, changes to its
   fields on Production aren't propagated.
-- **Metaobject reference fields** (`metaobject_reference`, `product_reference`,
-  `file_reference`, etc.) are dropped from both definitions and entries —
-  the GIDs they hold on Production don't resolve to the same records on
-  Dev, and resolving them across metaobject definitions (e.g. a "panel"
-  type referencing a "layer" type) isn't implemented. A definition with
-  only reference fields is skipped entirely; a definition with a mix of
-  scalar and reference fields is still created, just without those fields
-  — this is what previously made an *entire* definition fail to create
-  (and every entry under it fail with "No metaobject definition exists")
-  if any one of its fields was a reference type.
+- **Metaobject reference fields**: `product_reference`, `collection_reference`,
+  `page_reference`, and `variant_reference` (including their `list.*` forms)
+  are resolved to the matching Dev-side record — matched by handle, or by
+  handle+SKU for variants — instead of being dropped; a reference whose
+  target hasn't synced to Dev (or no longer exists there) is still dropped
+  and logged per-entry. `metaobject_reference` and `mixed_reference` are
+  dropped from both definitions and entries, since resolving them would
+  require the referencing field *definition* to declare which Dev-side
+  metaobject definition it targets — needing definitions created in
+  dependency order plus an update path for existing ones, neither of which
+  is implemented. `file_reference` is dropped too — files have no stable
+  cross-store handle to match Production/Dev files by (see Files below). A
+  definition left with zero fields after dropping those is skipped
+  entirely; a definition with a mix of kept and dropped fields is still
+  created, just without the dropped ones — this is what previously made an
+  *entire* definition fail to create (and every entry under it fail with
+  "No metaobject definition exists") if any one of its fields was a
+  reference type.
 - **Blogs and articles** (`articles` resource): matched by handle (blogs) and
   by blog-handle + article-handle (articles), so re-running is idempotent.
   Article images, comments, and article-level metafields are not synced.
