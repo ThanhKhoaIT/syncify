@@ -30,7 +30,9 @@ interface MenuItemNode {
   type: string;
   url: string | null;
   resourceId: string | null;
-  items: MenuItemNode[];
+  // Only queried 3 levels deep (Shopify's own nesting limit) — the deepest
+  // level's nodes come back with no `items` key at all, not `[]`.
+  items?: MenuItemNode[];
 }
 
 interface Menu {
@@ -145,14 +147,14 @@ const MENU_UPDATE = `#graphql
   }
 `;
 
-function countAll(items: MenuItemNode[]): number {
+function countAll(items: MenuItemNode[] = []): number {
   return items.reduce((sum, i) => sum + 1 + countAll(i.items), 0);
 }
 
 // Pass 1 (both dry-run and live): drop items whose type has no reliable
 // cross-store equivalent at all. Resolvable-type items pass through
 // unchanged (still carrying their Production resourceId).
-function dropUnresolvable(items: MenuItemNode[], stats: { skipped: number }): MenuItemNode[] {
+function dropUnresolvable(items: MenuItemNode[] = [], stats: { skipped: number }): MenuItemNode[] {
   const result: MenuItemNode[] = [];
   for (const item of items) {
     if (UNRESOLVABLE_RESOURCE_TYPES.has(item.type)) {
@@ -164,7 +166,7 @@ function dropUnresolvable(items: MenuItemNode[], stats: { skipped: number }): Me
   return result;
 }
 
-function collectResourceIds(items: MenuItemNode[], ids: Set<string>): void {
+function collectResourceIds(items: MenuItemNode[] = [], ids: Set<string>): void {
   for (const item of items) {
     if (RESOLVABLE_TYPES.has(item.type) && item.resourceId) ids.add(item.resourceId);
     collectResourceIds(item.items, ids);
@@ -176,7 +178,7 @@ function collectResourceIds(items: MenuItemNode[], ids: Set<string>): void {
 // the `resolved` map. Anything that couldn't be resolved (handle lookup
 // failed on Production, or no matching record exists on Dev) is skipped
 // along with its subtree here.
-function resolveAndFilter(items: MenuItemNode[], resolved: Map<string, string>, stats: { skipped: number }): FilteredItem[] {
+function resolveAndFilter(items: MenuItemNode[] = [], resolved: Map<string, string>, stats: { skipped: number }): FilteredItem[] {
   const result: FilteredItem[] = [];
   for (const item of items) {
     if (RESOLVABLE_TYPES.has(item.type)) {
