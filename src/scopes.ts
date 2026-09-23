@@ -8,7 +8,11 @@ import { ShopifyClient } from './client.js';
 export const RESOURCE_SCOPES: Record<string, string[]> = {
   products: ['products'],
   theme: [], // shells out to the `shopify` CLI, which uses its own auth — not the Admin API token
-  metafields: [], // shop/product metafields need no dedicated scope
+  // Metafield *definitions* now span Product/ProductVariant/Collection
+  // (products) and Page/Article/Blog (online_store_pages) owner types (see
+  // sync/metafields.ts); Shop-owner metafields/definitions need no
+  // dedicated scope.
+  metafields: ['products', 'online_store_pages'],
   metaobjects: ['metaobjects', 'metaobject_definitions'],
   content: ['online_store_pages'],
   discounts: ['discounts'],

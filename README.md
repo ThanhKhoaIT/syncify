@@ -71,11 +71,16 @@ instead.
    - `read_files`
    - `read_online_store_navigation`
 
-   No scope is needed for shop-level or product-level metafields — Shopify
-   doesn't have a `read_metafields`/`write_metafields` scope (that was
-   removed). Metaobjects are a separate feature and do need the two scopes
-   above — don't confuse the two. `read_online_store_pages` despite the
-   name also covers `Blog`/`Article` — no separate scope needed for those.
+   No scope is needed for metafield *values* — Shopify doesn't have a
+   `read_metafields`/`write_metafields` scope (that was removed). Metafield
+   *definitions* (see sync/metafields.ts) do need `read_products` (for
+   Product/ProductVariant/Collection-owned definitions) and
+   `read_online_store_pages` (for Page/Article/Blog-owned definitions) —
+   already listed above, since those are the same scopes `products`/
+   `collections`/`content`/`articles` need anyway. Metaobjects are a
+   separate feature and do need the two scopes above — don't confuse the
+   two. `read_online_store_pages` despite the name also covers
+   `Blog`/`Article` — no separate scope needed for those.
 5. Save, then go to the **API credentials** tab and click **Install app**
    (confirm the install).
 6. Under **Admin API access token**, click **Reveal token once** and copy it
@@ -95,8 +100,10 @@ Repeat for the **Dev** store (`SHOPIFY_DEV_TOKEN`, naming the app e.g.
 - `write_files`
 - `write_online_store_navigation`
 
-(Same note as above — no `write_metafields` scope exists; shop and product
-metafields don't need one, but metaobjects do.)
+(Same note as above — no `write_metafields` scope exists for metafield
+*values*; metafield *definitions* need `write_products`/
+`write_online_store_pages` as listed above, and metaobjects need their own
+two scopes.)
 
 Copy each revealed token into `.env` (`SHOPIFY_PROD_TOKEN`/`SHOPIFY_DEV_TOKEN`).
 Store domains don't go in `.env` — they're `from.store`/`to.store` in
@@ -326,8 +333,29 @@ stable filename field — see "Files" above) are always blanked, since there's
 nothing to match them against. Each blanked key is logged to `syncify.log`.
 product/collection/page/blog links use a different, always-portable
 `shopify://products/<handle>`-style reference and are unaffected by any of
-this. If a push still fails for some other reason, work around a
-hard-rejecting file with `themeIgnorePatterns` in `.syncifyrc.json`:
+this.
+
+**"Dynamic source '...' does not exist"** — a section/block setting bound
+to a metafield via the theme editor's Dynamic Source picker (e.g.
+`product.metafields.custom.delivery_time.value`) is namespace+key based and
+already portable, but `theme push` validates it against the metafield
+**definition** registered on the target store, not just whether some record
+happens to carry a value under that namespace/key. The `metafields`
+resource (see "Known limitations" below) now syncs definitions — not just
+values — across Product/ProductVariant/Collection/Page/Article/Blog/Shop
+owner types, create-only, so as long as `metafields` runs before `theme`
+(its default position in `RESOURCE_ORDER`) this resolves with no change to
+the template at all. It still fails if: the definition's type is
+`metaobject_reference`/`mixed_reference` (skipped — same cross-definition
+dependency problem as metaobjects), `metafields` wasn't included in this
+sync's resource selection, or the definition changed on Production after
+first being created on Dev (no update path). Fall back to
+`themeAutoSkipOnError`/`themeIgnorePatterns` for those cases — the error
+includes the template's file path (e.g. `templates/product.json`), which
+the broken-file parser above already picks up.
+
+If a push still fails for some other reason, work around a hard-rejecting
+file with `themeIgnorePatterns` in `.syncifyrc.json`:
 
 ```sh
 syncify config set themeIgnorePatterns "templates/page.our-story.json,templates/index.json"
@@ -362,8 +390,13 @@ fixed on Production.
 
 - **Inventory levels** are not synced (would require mapping locations
   between the two stores).
-- **Variant-level metafields** are not synced yet — shop-level,
-  product-level, and page-level metafields are.
+- **Variant-level metafield *values*** are not synced yet — shop-level,
+  product-level, and page-level metafield values are. Metafield
+  *definitions* (the schema, not the data — see sync/metafields.ts) do sync
+  for Product/ProductVariant/Collection/Page/Article/Blog/Shop owner types,
+  create-only like metaobject definitions; a definition existing on Dev is
+  what lets a theme's "Dynamic source" binding resolve, independent of
+  whether the underlying value is synced.
 - **Product images** are reconciled on every sync: Dev's current media is
   deleted and Production's current images re-attached fresh via
   `productDeleteMedia`/`productCreateMedia` (media has no stable cross-store
