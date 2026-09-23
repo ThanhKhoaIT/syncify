@@ -46,6 +46,12 @@ scopes = "${scopes}"
 
 [auth]
 redirect_urls = ["https://shopify.dev/apps/default-app-home"]
+
+[webhooks]
+# Keep this in sync with the pinned Admin API version in src/client.ts —
+# unrelated to whether the app actually subscribes to any webhooks, but
+# \`shopify app deploy\` rejects the config without it.
+api_version = "2026-07"
 `;
 }
 
