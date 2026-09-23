@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { Notes } from '../notes.js';
 
 interface FileNode {
   __typename: string;
@@ -53,9 +54,8 @@ function contentType(typename: string): string {
 }
 
 export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    'Files have no stable handle to match on, so this sync is NOT idempotent — re-running will create duplicate files on Dev.',
-  ];
+  const notes = new Notes('files');
+  notes.push('Files have no stable handle to match on, so this sync is NOT idempotent — re-running will create duplicate files on Dev.');
 
   const nodes: FileNode[] = [];
   let cursor: string | null = null;
@@ -74,7 +74,7 @@ export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
   logger.step(`Found ${withUrls.length} files on ${ctx.config.prodStore} (${skipped} skipped).`);
 
   if (!ctx.live) {
-    return { resource: 'files', planned: withUrls.length, applied: 0, skipped, notes };
+    return { resource: 'files', planned: withUrls.length, applied: 0, skipped, noteCount: notes.length };
   }
 
   // fileCreate accepts up to 250 files per call (confirmed against Shopify's
@@ -101,5 +101,5 @@ export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
   }
   bar.done();
 
-  return { resource: 'files', planned: withUrls.length, applied, skipped, notes };
+  return { resource: 'files', planned: withUrls.length, applied, skipped, noteCount: notes.length };
 }

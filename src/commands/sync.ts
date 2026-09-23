@@ -126,9 +126,10 @@ export async function runSync(flags: SyncFlags): Promise<void> {
       ? `✅ ${label}: ${result.applied} synced${result.skipped > 0 ? `, ${result.skipped} skipped` : ''} (${result.planned} total)`
       : `📝 ${label}: ${result.planned} would sync (dry-run)`;
     logger.info(summary);
-    if (result.notes.length > 0) {
-      result.notes.forEach((n) => logger.file(`${resource}: ${n}`));
-      logger.info(`  (${result.notes.length} note(s) written to syncify.log)`);
+    if (result.noteCount > 0) {
+      // Each note was already written to syncify.log as it happened (see
+      // src/notes.ts) — this is just reporting the count, not re-writing.
+      logger.info(`  (${result.noteCount} note(s) written to syncify.log)`);
     }
   }
 

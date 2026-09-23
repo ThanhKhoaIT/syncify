@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { MetafieldBatcher } from '../metafieldBatcher.js';
+import { Notes } from '../notes.js';
 
 interface Variant {
   sku: string | null;
@@ -116,13 +117,16 @@ const PRODUCT_CREATE_MEDIA = `#graphql
 `;
 
 export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    'Inventory levels are not synced (would require mapping locations between stores) — variants sync without stock quantities.',
+  const notes = new Notes('products');
+  notes.push('Inventory levels are not synced (would require mapping locations between stores) — variants sync without stock quantities.');
+  notes.push(
     ctx.config.productTitlePrefix
       ? `Product titles are prefixed with "${ctx.config.productTitlePrefix}" on Dev (productTitlePrefix in .syncifyrc.json — set to "" to disable).`
-      : 'productTitlePrefix is empty — product titles sync unprefixed.',
-    'Product images are reconciled on every sync — Dev\'s current media is deleted and Production\'s current images re-attached fresh, so image changes on Production always propagate. Any image added directly on Dev (not from Production) is wiped on the next sync. Video/3D model media is not synced, only images.',
-  ];
+      : 'productTitlePrefix is empty — product titles sync unprefixed.'
+  );
+  notes.push(
+    "Product images are reconciled on every sync — Dev's current media is deleted and Production's current images re-attached fresh, so image changes on Production always propagate. Any image added directly on Dev (not from Production) is wiped on the next sync. Video/3D model media is not synced, only images."
+  );
   const products: Product[] = [];
   let cursor: string | null = null;
 
@@ -135,17 +139,12 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
   logger.step(`Found ${products.length} products on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
-    return {
-      resource: 'products',
-      planned: products.length,
-      applied: 0,
-      skipped: 0,
-      notes: [...notes, `Dry-run: ${products.length} products would be upserted via productSet.`],
-    };
+    notes.push(`Dry-run: ${products.length} products would be upserted via productSet.`);
+    return { resource: 'products', planned: products.length, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
   let applied = 0;
-  const metafieldBatcher = new MetafieldBatcher(ctx.dev);
+  const metafieldBatcher = new MetafieldBatcher(ctx.dev, notes);
   const bar = createProgressBar(products.length, 'products');
   for (const product of products) {
     const input = {
@@ -205,7 +204,6 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
   bar.done();
 
   await metafieldBatcher.flushAll();
-  notes.push(...metafieldBatcher.drainNotes());
 
-  return { resource: 'products', planned: products.length, applied, skipped: products.length - applied, notes };
+  return { resource: 'products', planned: products.length, applied, skipped: products.length - applied, noteCount: notes.length };
 }

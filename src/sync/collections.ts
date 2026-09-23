@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { Notes } from '../notes.js';
 
 interface RuleSetRule {
   column: string;
@@ -120,9 +121,10 @@ const COLLECTION_REMOVE_PRODUCTS = `#graphql
 `;
 
 export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    'Manual (non-rule-based) collection membership is reconciled on every sync — products added or removed on Production propagate to Dev, matched by product handle (a stable identifier, unlike media). Removal happens via an async Shopify job, so it may not be reflected immediately after the run finishes. Automated (rule-based) collections resolve membership from their rules automatically on Dev, no separate step needed.',
-  ];
+  const notes = new Notes('collections');
+  notes.push(
+    'Manual (non-rule-based) collection membership is reconciled on every sync — products added or removed on Production propagate to Dev, matched by product handle (a stable identifier, unlike media). Removal happens via an async Shopify job, so it may not be reflected immediately after the run finishes. Automated (rule-based) collections resolve membership from their rules automatically on Dev, no separate step needed.'
+  );
 
   const collections: Collection[] = [];
   let cursor: string | null = null;
@@ -135,13 +137,8 @@ export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
   logger.step(`Found ${collections.length} collections on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
-    return {
-      resource: 'collections',
-      planned: collections.length,
-      applied: 0,
-      skipped: 0,
-      notes: [...notes, `Dry-run: ${collections.length} collections would be upserted.`],
-    };
+    notes.push(`Dry-run: ${collections.length} collections would be upserted.`);
+    return { resource: 'collections', planned: collections.length, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
   const existing = new Map<string, string>();
@@ -239,5 +236,5 @@ export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
   }
   bar.done();
 
-  return { resource: 'collections', planned: collections.length, applied, skipped: collections.length - applied, notes };
+  return { resource: 'collections', planned: collections.length, applied, skipped: collections.length - applied, noteCount: notes.length };
 }

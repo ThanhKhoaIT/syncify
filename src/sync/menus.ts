@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { Notes } from '../notes.js';
 
 // Resource-linked types we CAN resolve cross-store: look up the referenced
 // record's handle on Production, then find the matching record by that same
@@ -216,9 +217,10 @@ async function resolveDevId(ctx: SyncContext, type: string, handle: string): Pro
 }
 
 export async function syncMenus(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    'Product/Collection/Page/Blog menu items are resolved by handle to the matching Dev record on a --live run. Items linking to an article, metaobject, shop policy, customer account page, or "all collections" are skipped along with their sub-items — no reliable cross-store equivalent to resolve to.',
-  ];
+  const notes = new Notes('menus');
+  notes.push(
+    'Product/Collection/Page/Blog menu items are resolved by handle to the matching Dev record on a --live run. Items linking to an article, metaobject, shop policy, customer account page, or "all collections" are skipped along with their sub-items — no reliable cross-store equivalent to resolve to.'
+  );
 
   const menus: Menu[] = [];
   let cursor: string | null = null;
@@ -234,16 +236,8 @@ export async function syncMenus(ctx: SyncContext): Promise<SyncResult> {
   logger.step(`Found ${menus.length} menus on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
-    return {
-      resource: 'menus',
-      planned: pruned.length,
-      applied: 0,
-      skipped: stats.skipped,
-      notes: [
-        ...notes,
-        `Dry-run: ${pruned.length} menus would be upserted. Product/Collection/Page/Blog links aren't verified against Dev until --live.`,
-      ],
-    };
+    notes.push(`Dry-run: ${pruned.length} menus would be upserted. Product/Collection/Page/Blog links aren't verified against Dev until --live.`);
+    return { resource: 'menus', planned: pruned.length, applied: 0, skipped: stats.skipped, noteCount: notes.length };
   }
 
   const resourceIds = new Set<string>();
@@ -297,5 +291,5 @@ export async function syncMenus(ctx: SyncContext): Promise<SyncResult> {
   }
   bar.done();
 
-  return { resource: 'menus', planned: filtered.length, applied, skipped: stats.skipped, notes };
+  return { resource: 'menus', planned: filtered.length, applied, skipped: stats.skipped, noteCount: notes.length };
 }

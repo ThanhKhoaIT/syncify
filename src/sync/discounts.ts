@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { Notes } from '../notes.js';
 
 const DISCOUNTS_QUERY = `#graphql
   query CodeDiscounts($cursor: String) {
@@ -41,10 +42,11 @@ const DISCOUNT_CREATE = `#graphql
 `;
 
 export async function syncDiscounts(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    'Only basic percentage/fixed-amount discount codes are synced (BXGY, free shipping, and automatic discounts are skipped).',
-    'This sync is NOT idempotent yet: re-running will attempt to recreate codes and fail on duplicates — treat re-runs as needing manual cleanup on the dev store first.',
-  ];
+  const notes = new Notes('discounts');
+  notes.push('Only basic percentage/fixed-amount discount codes are synced (BXGY, free shipping, and automatic discounts are skipped).');
+  notes.push(
+    'This sync is NOT idempotent yet: re-running will attempt to recreate codes and fail on duplicates — treat re-runs as needing manual cleanup on the dev store first.'
+  );
   const supported: any[] = [];
   let skipped = 0;
   let cursor: string | null = null;
@@ -64,7 +66,7 @@ export async function syncDiscounts(ctx: SyncContext): Promise<SyncResult> {
   logger.step(`Found ${supported.length} discount codes on ${ctx.config.prodStore} (${skipped} skipped).`);
 
   if (!ctx.live) {
-    return { resource: 'discounts', planned: supported.length, applied: 0, skipped, notes };
+    return { resource: 'discounts', planned: supported.length, applied: 0, skipped, noteCount: notes.length };
   }
 
   let applied = 0;
@@ -97,5 +99,5 @@ export async function syncDiscounts(ctx: SyncContext): Promise<SyncResult> {
   }
   bar.done();
 
-  return { resource: 'discounts', planned: supported.length, applied, skipped, notes };
+  return { resource: 'discounts', planned: supported.length, applied, skipped, noteCount: notes.length };
 }

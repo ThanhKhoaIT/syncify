@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SyncContext, SyncResult } from '../types.js';
 import { logger } from '../logger.js';
+import { Notes } from '../notes.js';
 
 function run(cmd: string, args: string[]): Promise<void> {
   return new Promise((resolvePromise, reject) => {
@@ -85,7 +86,7 @@ function extractFailedFilePaths(output: string): string[] {
  * README.md "Theme sync auth" for setup.
  */
 export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [];
+  const notes = new Notes('theme');
   const tmpDir = mkdtempSync(join(tmpdir(), 'syncify-theme-'));
 
   try {
@@ -95,7 +96,7 @@ export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
     if (!ctx.live) {
       notes.push('Dry-run: theme pulled locally to inspect, not pushed to dev store.');
       rmSync(tmpDir, { recursive: true, force: true });
-      return { resource: 'theme', planned: 1, applied: 0, skipped: 0, notes };
+      return { resource: 'theme', planned: 1, applied: 0, skipped: 0, noteCount: notes.length };
     }
 
     const ignorePatterns = [...ctx.config.themeIgnorePatterns];
@@ -144,7 +145,7 @@ export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
     }
 
     rmSync(tmpDir, { recursive: true, force: true });
-    return { resource: 'theme', planned: 1, applied: 1, skipped: 0, notes };
+    return { resource: 'theme', planned: 1, applied: 1, skipped: 0, noteCount: notes.length };
   } catch (err) {
     // Deliberately NOT cleaned up on failure — a "Section type 'X' does not
     // refer to an existing section file" error usually means Production's

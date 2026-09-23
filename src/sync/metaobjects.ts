@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { Notes } from '../notes.js';
 
 // Field types whose value holds a GID pointing at another resource, which
 // won't exist (or will point at the wrong record) on the dev store. Synced
@@ -111,9 +112,10 @@ const ENTRY_UPSERT = `#graphql
 `;
 
 export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    'Reference-type fields (metaobject_reference, product_reference, file_reference, etc.) are dropped from both definitions and entries — the GIDs they hold on Production do not resolve to the same records on Dev, and resolving them across metaobject definitions (e.g. a "panel" type referencing a "layer" type) isn\'t implemented. A definition with only reference fields is skipped entirely; a definition with a mix keeps its scalar fields.',
-  ];
+  const notes = new Notes('metaobjects');
+  notes.push(
+    'Reference-type fields (metaobject_reference, product_reference, file_reference, etc.) are dropped from both definitions and entries — the GIDs they hold on Production do not resolve to the same records on Dev, and resolving them across metaobject definitions (e.g. a "panel" type referencing a "layer" type) isn\'t implemented. A definition with only reference fields is skipped entirely; a definition with a mix keeps its scalar fields.'
+  );
 
   const definitions: Definition[] = [];
   let cursor: string | null = null;
@@ -140,13 +142,8 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
   const planned = definitions.length + entries.length;
 
   if (!ctx.live) {
-    return {
-      resource: 'metaobjects',
-      planned,
-      applied: 0,
-      skipped: 0,
-      notes: [...notes, `Dry-run: ${definitions.length} definitions and ${entries.length} entries would be upserted.`],
-    };
+    notes.push(`Dry-run: ${definitions.length} definitions and ${entries.length} entries would be upserted.`);
+    return { resource: 'metaobjects', planned, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
   // Definitions must exist on dev before entries referencing their type can
@@ -236,5 +233,5 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
   }
   bar.done();
 
-  return { resource: 'metaobjects', planned, applied, skipped: planned - applied, notes };
+  return { resource: 'metaobjects', planned, applied, skipped: planned - applied, noteCount: notes.length };
 }

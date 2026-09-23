@@ -13,5 +13,8 @@ export interface SyncResult {
   planned: number;
   applied: number;
   skipped: number;
-  notes: string[];
+  // Notes are written to syncify.log immediately as they happen (see
+  // src/notes.ts), not carried back in-memory — this is just the count for
+  // the end-of-resource console summary line.
+  noteCount: number;
 }

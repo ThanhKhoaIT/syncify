@@ -1,4 +1,5 @@
 import { ShopifyClient } from './client.js';
+import { Notes } from './notes.js';
 
 interface FieldInput {
   namespace: string;
@@ -37,9 +38,11 @@ const MAX_VALUE_BYTES = 131072;
 // per owner regardless of how few fields it has.
 export class MetafieldBatcher {
   private queue: QueuedMetafield[] = [];
-  private notes: string[] = [];
 
-  constructor(private readonly dev: ShopifyClient) {}
+  constructor(
+    private readonly dev: ShopifyClient,
+    private readonly notes: Notes
+  ) {}
 
   // Queues an owner's metafields; call flushIfFull() after each owner so
   // the queue never grows past one batch beyond BATCH_SIZE.
@@ -89,10 +92,4 @@ export class MetafieldBatcher {
     }
   }
 
-  // Returns and clears accumulated error notes — call after flushAll().
-  drainNotes(): string[] {
-    const drained = this.notes;
-    this.notes = [];
-    return drained;
-  }
 }

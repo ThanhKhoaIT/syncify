@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { MetafieldBatcher } from '../metafieldBatcher.js';
+import { Notes } from '../notes.js';
 
 interface Metafield {
   namespace: string;
@@ -64,9 +65,10 @@ const PAGE_UPDATE = `#graphql
 `;
 
 export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    "A page's assigned template (templateSuffix, e.g. \"contact\" for page.contact.json) is synced, but the template/section files themselves are theme files, not part of the Page resource — sync the \"theme\" resource too, or the page will reference a template that doesn't exist on Dev and fall back to the default.",
-  ];
+  const notes = new Notes('content');
+  notes.push(
+    "A page's assigned template (templateSuffix, e.g. \"contact\" for page.contact.json) is synced, but the template/section files themselves are theme files, not part of the Page resource — sync the \"theme\" resource too, or the page will reference a template that doesn't exist on Dev and fall back to the default."
+  );
   const pages: Page[] = [];
   let cursor: string | null = null;
 
@@ -79,7 +81,7 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   logger.step(`Found ${pages.length} pages on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
-    return { resource: 'content', planned: pages.length, applied: 0, skipped: 0, notes };
+    return { resource: 'content', planned: pages.length, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
   // Build handle -> id map of existing dev pages so re-running sync updates
@@ -96,7 +98,7 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   } while (devCursor);
 
   let applied = 0;
-  const metafieldBatcher = new MetafieldBatcher(ctx.dev);
+  const metafieldBatcher = new MetafieldBatcher(ctx.dev, notes);
   const bar = createProgressBar(pages.length, 'content');
   for (const page of pages) {
     const existingId = existing.get(page.handle.normalize('NFC'));
@@ -128,7 +130,6 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   bar.done();
 
   await metafieldBatcher.flushAll();
-  notes.push(...metafieldBatcher.drainNotes());
 
-  return { resource: 'content', planned: pages.length, applied, skipped: pages.length - applied, notes };
+  return { resource: 'content', planned: pages.length, applied, skipped: pages.length - applied, noteCount: notes.length };
 }

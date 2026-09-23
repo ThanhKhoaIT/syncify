@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { Notes } from '../notes.js';
 
 interface Blog {
   handle: string;
@@ -93,7 +94,7 @@ const ARTICLE_UPDATE = `#graphql
 `;
 
 export async function syncArticles(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [];
+  const notes = new Notes('articles');
 
   const blogs: Blog[] = [];
   let cursor: string | null = null;
@@ -116,13 +117,8 @@ export async function syncArticles(ctx: SyncContext): Promise<SyncResult> {
   const planned = blogs.length + articles.length;
 
   if (!ctx.live) {
-    return {
-      resource: 'articles',
-      planned,
-      applied: 0,
-      skipped: 0,
-      notes: [...notes, `Dry-run: ${blogs.length} blogs and ${articles.length} articles would be upserted.`],
-    };
+    notes.push(`Dry-run: ${blogs.length} blogs and ${articles.length} articles would be upserted.`);
+    return { resource: 'articles', planned, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
   // Blogs first — articles need the Dev blog's id. Matched by handle
@@ -204,5 +200,5 @@ export async function syncArticles(ctx: SyncContext): Promise<SyncResult> {
   }
   bar.done();
 
-  return { resource: 'articles', planned, applied, skipped: planned - applied, notes };
+  return { resource: 'articles', planned, applied, skipped: planned - applied, noteCount: notes.length };
 }

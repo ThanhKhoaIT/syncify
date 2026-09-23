@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { Notes } from '../notes.js';
 
 interface Metafield {
   namespace: string;
@@ -35,9 +36,10 @@ const METAFIELDS_SET_MUTATION = `#graphql
 `;
 
 export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
-  const notes: string[] = [
-    'This module handles shop-level metafields only. Product metafields sync as part of the "products" resource (see sync/products.ts). Variant-level metafields are not yet implemented.',
-  ];
+  const notes = new Notes('metafields');
+  notes.push(
+    'This module handles shop-level metafields only. Product metafields sync as part of the "products" resource (see sync/products.ts). Variant-level metafields are not yet implemented.'
+  );
   const all: Metafield[] = [];
   let cursor: string | null = null;
 
@@ -50,7 +52,7 @@ export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   logger.step(`Found ${all.length} shop metafields on ${ctx.config.prodStore}.`);
 
   if (!ctx.live) {
-    return { resource: 'metafields', planned: all.length, applied: 0, skipped: 0, notes };
+    return { resource: 'metafields', planned: all.length, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
   const devShop: any = await ctx.dev.query(SHOP_ID_QUERY);
@@ -71,5 +73,5 @@ export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   }
   bar.done();
 
-  return { resource: 'metafields', planned: all.length, applied, skipped: all.length - applied, notes };
+  return { resource: 'metafields', planned: all.length, applied, skipped: all.length - applied, noteCount: notes.length };
 }
