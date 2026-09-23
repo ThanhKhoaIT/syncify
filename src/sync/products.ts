@@ -75,7 +75,18 @@ const PRODUCTS_QUERY = `#graphql
   }
 `;
 
-// productSet upserts by handle, so re-running sync is idempotent.
+const DEV_PRODUCTS_QUERY = `#graphql
+  query DevProducts($cursor: String) {
+    products(first: 250, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id handle }
+    }
+  }
+`;
+
+// productSet without an `id` always creates — Dev's existing handle→id map
+// (built below) supplies `id` so a matching handle updates instead of
+// colliding with "Handle already in use".
 // NOTE: verify ProductSetInput's exact shape via schema introspection for the
 // pinned apiVersion (see src/client.ts) before the first live run — Shopify
 // has revised this input across versions.
@@ -143,12 +154,22 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     return { resource: 'products', planned: products.length, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
+  const existing = new Map<string, string>();
+  let devCursor: string | null = null;
+  do {
+    const data: any = await ctx.dev.query(DEV_PRODUCTS_QUERY, { cursor: devCursor });
+    for (const p of data.products.nodes) existing.set(p.handle.normalize('NFC'), p.id);
+    devCursor = data.products.pageInfo.hasNextPage ? data.products.pageInfo.endCursor : null;
+  } while (devCursor);
+
   let applied = 0;
   const metafieldBatcher = new MetafieldBatcher(ctx.dev, notes);
   const bar = createProgressBar(products.length, 'products');
   for (const product of products) {
-    const input = {
-      handle: product.handle,
+    const handle = product.handle.normalize('NFC');
+    const existingId = existing.get(handle);
+    const input: any = {
+      handle,
       title: `${ctx.config.productTitlePrefix}${product.title}`,
       descriptionHtml: product.descriptionHtml,
       vendor: product.vendor,
@@ -167,6 +188,9 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
         optionValues: v.selectedOptions.map((so) => ({ optionName: so.name, name: so.value })),
       })),
     };
+    if (existingId) {
+      input.id = existingId;
+    }
 
     const result: any = await ctx.dev.mutate(PRODUCT_SET_MUTATION, { input });
     if (result.productSet.userErrors?.length) {
