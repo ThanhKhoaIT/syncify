@@ -43,7 +43,11 @@ function runCaptured(cmd: string, args: string[]): Promise<CapturedResult> {
 }
 
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
-const THEME_FILE_PATTERN = /^(sections|snippets|templates|layout|config|locales|assets|blocks)\/[^\s│]+\.\w+$/;
+// Not anchored: a boxed error line isn't always JUST the file path (e.g. a
+// Liquid syntax error prints "...found pipe in sections/foo.liquid" on one
+// line) — search for the path as a substring instead of requiring it to be
+// the entire line's content.
+const THEME_FILE_PATTERN = /(sections|snippets|templates|layout|config|locales|assets|blocks)\/[^\s│]+\.\w+/;
 
 // A theme `video`/`image_picker`/`video_url` setting whose value points at a
 // Production-only file (no stable cross-store identity to resolve it
@@ -74,8 +78,9 @@ function extractFailedFilePaths(output: string): string[] {
     }
     if (inErrorBox && line.startsWith('│')) {
       const content = line.replace(/^│/, '').replace(/│$/, '').trim();
-      if (THEME_FILE_PATTERN.test(content)) {
-        paths.add(content);
+      const fileMatch = content.match(THEME_FILE_PATTERN);
+      if (fileMatch) {
+        paths.add(fileMatch[0]);
       } else if (SETTING_VALUE_ERROR_PATTERN.test(content)) {
         paths.add('config/settings_data.json');
       }
