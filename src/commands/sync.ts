@@ -3,7 +3,7 @@ import { ShopifyClient } from '../client.js';
 import { resolveConfig } from '../config.js';
 import { assertSafeToWrite } from '../guard.js';
 import { assertRequiredScopes } from '../scopes.js';
-import { logger, setProgressBarsSuppressed } from '../logger.js';
+import { logger } from '../logger.js';
 import { SyncContext, SyncResult } from '../types.js';
 import { syncProducts } from '../sync/products.js';
 import { syncTheme } from '../sync/theme.js';
@@ -53,14 +53,6 @@ const RESOURCE_ORDER = [
   'files',
   'theme',
   'menus',
-];
-
-// Resources within the same phase have no dependency on each other, so run
-// concurrently; phases run in sequence. Mirrors RESOURCE_ORDER's reasoning.
-const RESOURCE_PHASES: string[][] = [
-  ['products', 'content', 'articles', 'metafields', 'metaobjects', 'discounts', 'files'],
-  ['collections'],
-  ['theme', 'menus'],
 ];
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -140,26 +132,8 @@ export async function runSync(flags: SyncFlags): Promise<void> {
     }
   }
 
-  for (const phase of RESOURCE_PHASES) {
-    const phaseResources = phase.filter((r) => resources.includes(r));
-    if (phaseResources.length === 0) continue;
-
-    if (phaseResources.length === 1) {
-      await runOne(phaseResources[0]);
-      continue;
-    }
-
-    // Concurrent phase: suppress live progress bars (multiple \r-based bars
-    // would otherwise fight over the same terminal line) and warn that
-    // per-resource log lines will interleave rather than appear as clean
-    // blocks — the tradeoff for actually running them in parallel.
-    logger.info(`\n⚡ Running ${phaseResources.length} independent resources in parallel — output below may interleave.`);
-    setProgressBarsSuppressed(true);
-    try {
-      await Promise.all(phaseResources.map((r) => runOne(r)));
-    } finally {
-      setProgressBarsSuppressed(false);
-    }
+  for (const resource of resources) {
+    await runOne(resource);
   }
 
   logger.success(

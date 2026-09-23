@@ -194,17 +194,9 @@ resolves Product/Collection/Page/Blog references by handle on Dev, and
 need those resources to already exist on Dev to resolve correctly, so they
 always run last.
 
-Independent resources within that order run **concurrently** to reduce
-total sync time: `products`, `content`, `articles`, `metafields`,
-`metaobjects`, `discounts`, and `files` all run in parallel as one group;
-`collections` runs alone once products are done; `theme` and `menus` run in
-parallel as a final group. When more than one resource is running at once,
-their progress bars are suppressed (multiple would otherwise overwrite each
-other's line) and their log lines can interleave — each line is
-self-labeled with its resource, so it stays readable even out of order.
-`src/client.ts` retries rate-limited requests (HTTP 429 or a GraphQL
-`THROTTLED` error) with exponential backoff, up to 5 attempts, so the added
-concurrency doesn't turn transient rate limits into a failed run.
+Resources run one at a time, in that order, each with its own live progress
+bar. `src/client.ts` retries rate-limited requests (HTTP 429 or a GraphQL
+`THROTTLED` error) with exponential backoff, up to 5 attempts.
 
 ## Scope check
 
@@ -292,19 +284,25 @@ Dev until manually updated.
   between the two stores).
 - **Variant-level metafields** are not synced yet — shop-level,
   product-level, and page-level metafields are.
-- **Product images** sync via `productCreateMedia`, but only the first time
-  a product has no media on Dev — re-running never duplicates, but an image
-  added/changed on Production after that first sync won't propagate. Video
-  and 3D model media are not synced, only images.
+- **Product images** are reconciled on every sync: Dev's current media is
+  deleted and Production's current images re-attached fresh via
+  `productDeleteMedia`/`productCreateMedia` (media has no stable cross-store
+  handle to diff against, unlike products/pages/collections, so full
+  replace is the only way to keep it accurate rather than just correct on
+  first creation). **Any image added directly on Dev — not synced from
+  Production — is wiped on the next sync.** Video and 3D model media are
+  not synced, only images.
 - **Collections**: automated (rule-based) collections sync their rules
   directly, so Dev resolves membership on its own. Manual collections'
-  member products (matched by handle, so `products` should sync first) only
-  sync on first creation — re-running doesn't update membership on an
-  already-existing Dev collection. Collection metafields are not synced.
-  Uses the deprecated `ruleSet`/`collectionAddProducts` fields rather than
-  Shopify's newer `sources`/`inclusion` API, since the latter's exact shape
-  isn't fully documented — verify against schema introspection before the
-  first live run if this breaks after a Shopify API update.
+  member products are reconciled on every sync (added/removed, diffed by
+  product handle — a stable identifier, so `products` should sync first for
+  new products to resolve). Removal runs as an async Shopify job, so it may
+  lag slightly past when the run finishes. Collection metafields are not
+  synced. Uses the deprecated `ruleSet`/`collectionAddProducts`/
+  `collectionRemoveProducts` fields rather than Shopify's newer
+  `sources`/`inclusion` API, since the latter's exact shape isn't fully
+  documented — verify against schema introspection before the first live
+  run if this breaks after a Shopify API update.
 - **Metaobject definition updates** aren't synced — only missing definitions
   are created on Dev; if a definition already exists there, changes to its
   fields on Production aren't propagated.

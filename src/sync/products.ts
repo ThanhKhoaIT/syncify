@@ -94,17 +94,28 @@ const PRODUCT_SET_MUTATION = `#graphql
       product {
         id
         handle
-        media(first: 1) { nodes { id } }
+        media(first: 50) { nodes { id } }
       }
       userErrors { field message }
     }
   }
 `;
 
-// No natural key to match existing media against, so this only attaches
-// images the first time a product has none on Dev — re-running never
-// duplicates, but an image added/changed on Production after the first
-// sync won't propagate. Same tradeoff as the "files" resource.
+// Media has no stable cross-store handle to diff against (same limitation
+// as the "files" resource), so an update reconciles by deleting Dev's
+// current media for the product and re-attaching Production's current set
+// fresh — the only way to keep it accurate on every run rather than only
+// the first time. Tradeoff: any image added directly on Dev (not synced
+// from Production) is wiped on the next sync.
+const PRODUCT_DELETE_MEDIA = `#graphql
+  mutation ProductDeleteMedia($productId: ID!, $mediaIds: [ID!]!) {
+    productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
+      deletedMediaIds
+      mediaUserErrors { field message }
+    }
+  }
+`;
+
 const PRODUCT_CREATE_MEDIA = `#graphql
   mutation ProductCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
     productCreateMedia(productId: $productId, media: $media) {
@@ -120,7 +131,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     ctx.config.productTitlePrefix
       ? `Product titles are prefixed with "${ctx.config.productTitlePrefix}" on Dev (productTitlePrefix in .syncifyrc.json — set to "" to disable).`
       : 'productTitlePrefix is empty — product titles sync unprefixed.',
-    'Product images sync via productCreateMedia, but only the first time a product has no media on Dev — re-running never duplicates, but an image added/changed on Production after that first sync won\'t propagate. Video/3D model media is not synced, only images.',
+    'Product images are reconciled on every sync — Dev\'s current media is deleted and Production\'s current images re-attached fresh, so image changes on Production always propagate. Any image added directly on Dev (not from Production) is wiped on the next sync. Video/3D model media is not synced, only images.',
   ];
   const products: Product[] = [];
   let cursor: string | null = null;
@@ -191,9 +202,17 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
       }
     }
 
-    const alreadyHasMedia = result.productSet.product.media.nodes.length > 0;
+    const existingMediaIds: string[] = result.productSet.product.media.nodes.map((m: { id: string }) => m.id);
     const images = product.media.nodes.filter((m) => m.__typename === 'MediaImage' && m.image?.url);
-    if (!alreadyHasMedia && images.length > 0) {
+
+    if (existingMediaIds.length > 0) {
+      const deleteResult: any = await ctx.dev.mutate(PRODUCT_DELETE_MEDIA, { productId: devProductId, mediaIds: existingMediaIds });
+      if (deleteResult.productDeleteMedia.mediaUserErrors?.length) {
+        notes.push(`Product "${product.handle}" media delete: ${JSON.stringify(deleteResult.productDeleteMedia.mediaUserErrors)}`);
+      }
+    }
+
+    if (images.length > 0) {
       const mediaResult: any = await ctx.dev.mutate(PRODUCT_CREATE_MEDIA, {
         productId: devProductId,
         media: images.map((m) => ({ originalSource: m.image!.url, mediaContentType: 'IMAGE', alt: m.alt ?? undefined })),

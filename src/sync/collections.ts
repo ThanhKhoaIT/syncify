@@ -66,6 +66,17 @@ const PRODUCT_BY_HANDLE = `#graphql
   }
 `;
 
+const DEV_COLLECTION_PRODUCTS_QUERY = `#graphql
+  query DevCollectionProducts($id: ID!, $cursor: String) {
+    collection(id: $id) {
+      products(first: 250, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id handle }
+      }
+    }
+  }
+`;
+
 // NOTE: ruleSet and collectionAddProducts are both marked deprecated by
 // Shopify in favor of a newer sources/inclusion API whose exact nested
 // shape isn't fully documented publicly — verify against schema
@@ -99,9 +110,18 @@ const COLLECTION_ADD_PRODUCTS = `#graphql
   }
 `;
 
+const COLLECTION_REMOVE_PRODUCTS = `#graphql
+  mutation CollectionRemoveProducts($id: ID!, $productIds: [ID!]!) {
+    collectionRemoveProducts(id: $id, productIds: $productIds) {
+      job { id }
+      userErrors { field message }
+    }
+  }
+`;
+
 export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
   const notes: string[] = [
-    'Manual (non-rule-based) collection membership only syncs the first time a collection is created on Dev — re-running does not update membership on an already-existing collection, to avoid duplicate-add errors. Automated (rule-based) collections resolve membership from their rules automatically on Dev, no separate step needed.',
+    'Manual (non-rule-based) collection membership is reconciled on every sync — products added or removed on Production propagate to Dev, matched by product handle (a stable identifier, unlike media). Removal happens via an async Shopify job, so it may not be reflected immediately after the run finishes. Automated (rule-based) collections resolve membership from their rules automatically on Dev, no separate step needed.',
   ];
 
   const collections: Collection[] = [];
@@ -171,24 +191,46 @@ export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
     }
     applied += 1;
 
-    // Manual collection membership — only on first creation (see note above).
-    if (!existingId && !collection.ruleSet) {
+    // Manual collection membership — reconciled on every sync (add/remove
+    // diffed by product handle) rather than only on first creation.
+    if (!collection.ruleSet) {
       const devCollectionId = payload.collection.id;
-      const productIds: string[] = [];
-      for (const p of collection.products.nodes) {
-        const productHandle = p.handle.normalize('NFC');
+      const prodHandles = new Set(collection.products.nodes.map((p) => p.handle.normalize('NFC')));
+
+      const devMembers = new Map<string, string>();
+      if (existingId) {
+        let memberCursor: string | null = null;
+        do {
+          const data: any = await ctx.dev.query(DEV_COLLECTION_PRODUCTS_QUERY, { id: devCollectionId, cursor: memberCursor });
+          for (const p of data.collection.products.nodes) devMembers.set(p.handle.normalize('NFC'), p.id);
+          memberCursor = data.collection.products.pageInfo.hasNextPage ? data.collection.products.pageInfo.endCursor : null;
+        } while (memberCursor);
+      }
+
+      const toAddHandles = [...prodHandles].filter((h) => !devMembers.has(h));
+      const toRemoveIds = [...devMembers.entries()].filter(([h]) => !prodHandles.has(h)).map(([, id]) => id);
+
+      const toAddIds: string[] = [];
+      for (const productHandle of toAddHandles) {
         const productResult: any = await ctx.dev.query(PRODUCT_BY_HANDLE, { handle: productHandle });
         const devProductId = productResult.productByHandle?.id;
         if (devProductId) {
-          productIds.push(devProductId);
+          toAddIds.push(devProductId);
         } else {
           notes.push(`Collection "${handle}": product "${productHandle}" not found on Dev — skipped from membership.`);
         }
       }
-      if (productIds.length > 0) {
-        const addResult: any = await ctx.dev.mutate(COLLECTION_ADD_PRODUCTS, { id: devCollectionId, productIds });
+
+      if (toAddIds.length > 0) {
+        const addResult: any = await ctx.dev.mutate(COLLECTION_ADD_PRODUCTS, { id: devCollectionId, productIds: toAddIds });
         if (addResult.collectionAddProducts.userErrors?.length) {
-          notes.push(`Collection "${handle}" membership: ${JSON.stringify(addResult.collectionAddProducts.userErrors)}`);
+          notes.push(`Collection "${handle}" membership add: ${JSON.stringify(addResult.collectionAddProducts.userErrors)}`);
+        }
+      }
+      if (toRemoveIds.length > 0) {
+        const removeResult: any = await ctx.dev.mutate(COLLECTION_REMOVE_PRODUCTS, { id: devCollectionId, productIds: toRemoveIds });
+        if (removeResult.collectionRemoveProducts.userErrors?.length) {
+          notes.push(`Collection "${handle}" membership remove: ${JSON.stringify(removeResult.collectionRemoveProducts.userErrors)}`);
         }
       }
     }
