@@ -24,6 +24,13 @@ export interface SyncifyRc {
   // those to the equivalent Dev resource, so skipping the file is the only
   // way to let the rest of the theme push through.
   themeIgnorePatterns: string[];
+  // Opt-in (default false): if a `theme` push fails, best-effort parse the
+  // failure output for the offending file path(s) and retry once with them
+  // added to the ignore list automatically, rather than failing the whole
+  // theme sync. Off by default since the parser is a heuristic over CLI
+  // output whose exact format isn't guaranteed stable — when it can't find
+  // a file path, this has no effect and the original error still surfaces.
+  themeAutoSkipOnError: boolean;
 }
 
 export interface ResolvedConfig extends SyncifyRc {
@@ -71,11 +78,17 @@ async function exchangeClientCredentials(store: string, clientId: string, client
     throw new Error(`Client credentials exchange for ${store} failed${cause}. Check the store domain and Client ID/secret are correct.`);
   }
 
+  const json = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string; error_description?: string };
+
   if (!res.ok) {
-    throw new Error(`Client credentials exchange for ${store} failed: ${res.status} ${res.statusText}`);
+    const reason = json.error_description ?? json.error;
+    throw new Error(
+      `Client credentials exchange for ${store} failed: ${res.status} ${res.statusText}` +
+        (reason ? ` — ${reason}` : ' (no error detail in response body)') +
+        '. Check the app is installed on this store, the Client ID/secret match this store\'s app, and the store domain is correct.'
+    );
   }
 
-  const json = (await res.json()) as { access_token?: string; error?: string; error_description?: string };
   if (!json.access_token) {
     throw new Error(`Client credentials exchange for ${store} returned no access_token: ${json.error_description ?? json.error ?? 'unknown error'}`);
   }
@@ -123,6 +136,7 @@ export async function resolveConfig(): Promise<ResolvedConfig> {
     // these fields existed.
     productTitlePrefix: rc.productTitlePrefix ?? '[DEV] ',
     themeIgnorePatterns: rc.themeIgnorePatterns ?? [],
+    themeAutoSkipOnError: rc.themeAutoSkipOnError ?? false,
     prodStore: rc.from.store,
     prodToken,
     devStore: rc.to.store,

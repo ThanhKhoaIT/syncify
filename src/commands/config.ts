@@ -2,6 +2,7 @@ import { loadRc, saveRc, SyncifyRc } from '../config.js';
 import { logger } from '../logger.js';
 
 const ARRAY_KEYS = ['resources', 'guard.allowedDestinations', 'guard.allowedDevPlanNames', 'themeIgnorePatterns'];
+const BOOLEAN_KEYS = ['themeAutoSkipOnError'];
 
 function getPath(obj: any, path: string): unknown {
   return path.split('.').reduce((acc, key) => acc?.[key], obj);
@@ -31,7 +32,19 @@ export function runConfigGet(key: string): void {
 
 export function runConfigSet(key: string, rawValue: string): void {
   const rc = loadRc();
-  const value = ARRAY_KEYS.includes(key) ? rawValue.split(',').map((v) => v.trim()) : rawValue;
+
+  let value: unknown;
+  if (ARRAY_KEYS.includes(key)) {
+    value = rawValue.split(',').map((v) => v.trim());
+  } else if (BOOLEAN_KEYS.includes(key)) {
+    if (rawValue !== 'true' && rawValue !== 'false') {
+      logger.error(`${key} must be "true" or "false", got "${rawValue}".`);
+      return;
+    }
+    value = rawValue === 'true';
+  } else {
+    value = rawValue;
+  }
 
   setPath(rc, key, value);
   saveRc(rc as SyncifyRc);

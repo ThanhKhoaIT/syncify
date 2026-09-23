@@ -112,7 +112,7 @@ const ENTRY_UPSERT = `#graphql
 
 export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
   const notes: string[] = [
-    'Reference-type fields (metaobject_reference, product_reference, file_reference, etc.) are skipped — the GIDs they hold on Production do not resolve to the same records on Dev. Only scalar fields sync.',
+    'Reference-type fields (metaobject_reference, product_reference, file_reference, etc.) are dropped from both definitions and entries — the GIDs they hold on Production do not resolve to the same records on Dev, and resolving them across metaobject definitions (e.g. a "panel" type referencing a "layer" type) isn\'t implemented. A definition with only reference fields is skipped entirely; a definition with a mix keeps its scalar fields.',
   ];
 
   const definitions: Definition[] = [];
@@ -168,11 +168,28 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
       bar.tick();
       continue;
     }
+
+    // Reference-type field definitions need a validation pointing at the
+    // referenced type's Dev-side definition ID, which requires that type to
+    // already exist on Dev — a dependency we don't resolve across
+    // definitions. Rather than fail the whole definition (and every entry
+    // under it) over one field, drop reference-type fields from the
+    // definition itself, same as reference-type field *values* are already
+    // dropped at the entry level.
+    const scalarFieldDefs = def.fieldDefinitions.filter((f) => !REFERENCE_FIELD_TYPES.has(f.type.name));
+    const droppedFieldCount = def.fieldDefinitions.length - scalarFieldDefs.length;
+
+    if (scalarFieldDefs.length === 0) {
+      notes.push(`Definition "${def.type}": all ${def.fieldDefinitions.length} field(s) are reference types — skipped entirely, nothing left to define.`);
+      bar.tick();
+      continue;
+    }
+
     const result: any = await ctx.dev.mutate(DEFINITION_CREATE, {
       definition: {
         type: def.type,
         name: def.name,
-        fieldDefinitions: def.fieldDefinitions.map((f) => ({
+        fieldDefinitions: scalarFieldDefs.map((f) => ({
           key: f.key,
           name: f.name,
           required: f.required,
@@ -182,8 +199,14 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
     });
     if (result.metaobjectDefinitionCreate.userErrors?.length) {
       notes.push(`Definition "${def.type}": ${JSON.stringify(result.metaobjectDefinitionCreate.userErrors)}`);
-    } else {
-      applied += 1;
+      bar.tick();
+      continue;
+    }
+
+    applied += 1;
+    existingTypes.add(def.type);
+    if (droppedFieldCount > 0) {
+      notes.push(`Definition "${def.type}": dropped ${droppedFieldCount} reference-type field(s) — resolving cross-store references between metaobject definitions isn't implemented.`);
     }
     bar.tick();
   }

@@ -5,6 +5,7 @@
   "themeSync": "cli",
   "productTitlePrefix": "[DEV] ",
   "themeIgnorePatterns": [],
+  "themeAutoSkipOnError": false,
   "guard": {
     "allowedDestinations": ["dev-store.myshopify.com"],
     "allowedDevPlanNames": ["Developer Preview", "Basic App Development", "Partner test store", "Development", "Trial"]

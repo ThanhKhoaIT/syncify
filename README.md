@@ -295,6 +295,26 @@ push` (wildcards allowed) — the listed files are skipped so the rest of the
 theme still pushes, at the cost of those specific files staying stale on
 Dev until manually updated.
 
+**Auto-skipping broken files on push failure.** Rather than adding every
+broken file to `themeIgnorePatterns` by hand, opt into automatic recovery:
+
+```sh
+syncify config set themeAutoSkipOnError true
+```
+
+Off by default. When a `theme push` fails, syncify best-effort parses the
+CLI's boxed error output (`╭─ error ─╮ ... ╰─╯`) for theme file paths and
+retries once with those added to the ignore list automatically — covering
+things `themeIgnorePatterns` can't predict in advance, like a genuine
+Liquid syntax error on Production (e.g. `Liquid syntax error (line 621):
+Expected end_of_string but found pipe`). This is a heuristic over CLI
+output whose exact format isn't guaranteed stable across `shopify` CLI
+versions or error types — if it can't find a recognizable file path, it
+has no effect and the original error surfaces exactly as before. Auto-
+skipped files are logged to `syncify.log`, and stay stale on Dev the same
+way a `themeIgnorePatterns` entry would, until the underlying issue is
+fixed on Production.
+
 ## Known limitations
 
 - **Inventory levels** are not synced (would require mapping locations
@@ -324,8 +344,15 @@ Dev until manually updated.
   are created on Dev; if a definition already exists there, changes to its
   fields on Production aren't propagated.
 - **Metaobject reference fields** (`metaobject_reference`, `product_reference`,
-  `file_reference`, etc.) are skipped — the GIDs they hold on Production
-  don't resolve to the same records on Dev. Only scalar fields sync.
+  `file_reference`, etc.) are dropped from both definitions and entries —
+  the GIDs they hold on Production don't resolve to the same records on
+  Dev, and resolving them across metaobject definitions (e.g. a "panel"
+  type referencing a "layer" type) isn't implemented. A definition with
+  only reference fields is skipped entirely; a definition with a mix of
+  scalar and reference fields is still created, just without those fields
+  — this is what previously made an *entire* definition fail to create
+  (and every entry under it fail with "No metaobject definition exists")
+  if any one of its fields was a reference type.
 - **Blogs and articles** (`articles` resource): matched by handle (blogs) and
   by blog-handle + article-handle (articles), so re-running is idempotent.
   Article images, comments, and article-level metafields are not synced.
