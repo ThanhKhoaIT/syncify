@@ -303,21 +303,26 @@ Sync `content` alone and a page assigned to a custom template will still
 create fine on Dev, but Shopify falls back to the default page template
 until the matching theme file exists there too.
 
-**Section settings that reference a Production-only resource by ID** — an
-`image_picker` or `video` setting in a section's JSON typically stores a
-`gid://shopify/...` reference, which only exists on Production. `theme push`
-can hard-reject the push for a file with a broken `video` reference (error:
-`Setting 'video' value does not point to an applicable shopify-hosted video
-resource`), or silently leave an `image_picker` setting empty. Unlike
-product/collection/page menu links, there's no stable handle to resolve
-these against (same root problem as the Files resource — no stable
-cross-store identity for media), so the broken value itself can't be
-auto-fixed. `themeAutoSkipOnError` (below) does recognize this specific
-`Setting '...' value does not point to...` error and auto-skips
-`config/settings_data.json` on retry, so it no longer has to be added to
-`themeIgnorePatterns` by hand — but the setting stays stale on Dev either
-way until the underlying file exists there. Work around a hard-rejecting
-file with `themeIgnorePatterns` in `.syncifyrc.json`:
+**Settings that reference a Production-only file** — an `image_picker` or
+`video` setting stores a `shopify://files/...` (or legacy
+`shopify://shop_images/...`) reference pointing at a file on the Files
+resource, which only exists on Production. `theme push` can hard-reject the
+push over a broken `video` reference (error: `Setting 'video' value does not
+point to an applicable shopify-hosted video resource`), or silently leave an
+`image_picker` setting empty. Unlike product/collection/page/blog links
+(which use a portable `shopify://products/<handle>`-style reference and
+resolve fine), there's no stable identity to resolve a file reference
+against (same root problem as the Files resource itself). Before every
+`theme push`, syncify now proactively scans the pulled theme's
+`config/*.json` and `templates/*.json` for exactly these two schemes and
+blanks the value to an empty placeholder — the same way the theme editor
+represents "unset" — so the push doesn't hard-reject at all; each blanked
+key is logged to `syncify.log`. The setting simply comes across empty on
+Dev rather than pointing at a broken reference; there's no cross-store fix
+for making it point at the right file, since Files sync isn't idempotent
+and doesn't preserve the original filename (see "Files" above). If a push
+still fails for some other reason, work around a hard-rejecting file with
+`themeIgnorePatterns` in `.syncifyrc.json`:
 
 ```sh
 syncify config set themeIgnorePatterns "templates/page.our-story.json,templates/index.json"

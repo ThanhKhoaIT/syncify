@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { SyncContext, SyncResult } from '../types.js';
 import { logger } from '../logger.js';
 import { Notes } from '../notes.js';
@@ -85,6 +85,92 @@ function extractFailedFilePaths(output: string): string[] {
   return [...paths];
 }
 
+// Only these schemes are non-portable: they point at the Files resource,
+// which has no stable cross-store identity (same root problem as the
+// "files" sync resource — see README "Known limitations"). shopify://
+// product/collection/page/blog references are handle-based and already
+// portable, so they're deliberately left alone.
+const NON_PORTABLE_REFERENCE_PATTERN = /^shopify:\/\/(files|shop_images)\//i;
+
+// Recursively blanks any string value matching NON_PORTABLE_REFERENCE_PATTERN,
+// anywhere in a JSON value (settings_data.json and templates/*.json nest
+// section/block settings arbitrarily deep). Blanking rather than deleting the
+// key mirrors how the theme editor represents "unset" for these setting
+// types, and avoids `theme push` hard-rejecting the whole file the same way
+// an unresolvable Production-only file reference does.
+function neutralizeReferences(value: unknown, path: string, replaced: string[]): unknown {
+  if (typeof value === 'string') {
+    if (NON_PORTABLE_REFERENCE_PATTERN.test(value)) {
+      replaced.push(path);
+      return '';
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v, i) => neutralizeReferences(v, `${path}[${i}]`, replaced));
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value)) {
+      out[key] = neutralizeReferences(v, path ? `${path}.${key}` : key, replaced);
+    }
+    return out;
+  }
+  return value;
+}
+
+function neutralizeJsonFile(filePath: string, relPath: string, replaced: string[]): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch {
+    return; // not valid JSON — leave untouched, let push surface the real error
+  }
+  const fileReplaced: string[] = [];
+  const updated = neutralizeReferences(parsed, '', fileReplaced);
+  if (fileReplaced.length > 0) {
+    writeFileSync(filePath, JSON.stringify(updated, null, 2));
+    for (const key of fileReplaced) replaced.push(`${relPath}:${key}`);
+  }
+}
+
+function findJsonFiles(dir: string, out: string[]): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return; // directory may not exist in every theme (e.g. no templates/)
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      findJsonFiles(full, out);
+    } else if (entry.endsWith('.json')) {
+      out.push(full);
+    }
+  }
+}
+
+// Blanks shopify://files/... and shopify://shop_images/... references in the
+// pulled theme's config/ and templates/ JSON before push, rather than
+// reactively parsing a push failure after the fact — targets just the
+// broken value instead of skipping the whole file via themeAutoSkipOnError.
+function neutralizeNonPortableReferences(tmpDir: string, notes: Notes): void {
+  const replaced: string[] = [];
+  for (const dir of ['config', 'templates']) {
+    const files: string[] = [];
+    findJsonFiles(join(tmpDir, dir), files);
+    for (const file of files) {
+      neutralizeJsonFile(file, relative(tmpDir, file), replaced);
+    }
+  }
+  if (replaced.length > 0) {
+    notes.push(
+      `Blanked ${replaced.length} shopify://files/... or shopify://shop_images/... reference(s) to an empty placeholder before push (they point to Production-only files with no stable cross-store identity — same limitation as the "files" resource): ${replaced.join(', ')}`
+    );
+  }
+}
+
 /**
  * Shells out to the `shopify` CLI rather than reimplementing the Asset API.
  *
@@ -107,6 +193,8 @@ export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
       rmSync(tmpDir, { recursive: true, force: true });
       return { resource: 'theme', planned: 1, applied: 0, skipped: 0, noteCount: notes.length };
     }
+
+    neutralizeNonPortableReferences(tmpDir, notes);
 
     const ignorePatterns = [...ctx.config.themeIgnorePatterns];
     if (ignorePatterns.length > 0) {
