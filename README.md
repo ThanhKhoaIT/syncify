@@ -396,7 +396,12 @@ fixed on Production.
   for Product/ProductVariant/Collection/Page/Article/Blog/Shop owner types,
   create-only like metaobject definitions; a definition existing on Dev is
   what lets a theme's "Dynamic source" binding resolve, independent of
-  whether the underlying value is synced.
+  whether the underlying value is synced. A definition whose namespace is
+  owned by a different app (or created with a restricted access level) hard
+  denies with `ACCESS_DENIED` regardless of scopes — not fixable by adding
+  scope, since Shopify enforces per-namespace app ownership independent of
+  the resource-type scope. That's caught per-definition and logged/skipped
+  rather than aborting the rest of the resource.
 - **Product images** are reconciled on every sync: Dev's current media is
   deleted and Production's current images re-attached fresh via
   `productDeleteMedia`/`productCreateMedia` (media has no stable cross-store

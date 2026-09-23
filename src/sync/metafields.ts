@@ -164,25 +164,38 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
       continue;
     }
 
-    const result: any = await ctx.dev.mutate(DEFINITION_CREATE, {
-      definition: {
-        namespace: def.namespace,
-        key: def.key,
-        name: def.name,
-        description: def.description ?? undefined,
-        type: def.type.name,
-        ownerType: def.ownerType,
-        validations: def.validations.map((v) => ({ name: v.name, value: v.value })),
-      },
-    });
-    if (result.metafieldDefinitionCreate.userErrors?.length) {
-      notes.push(`Definition "${def.ownerType}/${def.namespace}.${def.key}": ${JSON.stringify(result.metafieldDefinitionCreate.userErrors)}`);
-      bar.tick();
-      continue;
-    }
+    // metafieldDefinitionCreate can hard-fail with a top-level GraphQL
+    // ACCESS_DENIED error (client.ts throws on that, not a userErrors
+    // array) when the namespace is owned by a different app, or was
+    // created with a restricted access level — no scope grant can fix
+    // that, it's a deliberate per-namespace isolation boundary, not a
+    // permission gap. Caught per-definition so one inaccessible namespace
+    // doesn't abort every remaining definition and the shop metafield
+    // values sync that follows.
+    try {
+      const result: any = await ctx.dev.mutate(DEFINITION_CREATE, {
+        definition: {
+          namespace: def.namespace,
+          key: def.key,
+          name: def.name,
+          description: def.description ?? undefined,
+          type: def.type.name,
+          ownerType: def.ownerType,
+          validations: def.validations.map((v) => ({ name: v.name, value: v.value })),
+        },
+      });
+      if (result.metafieldDefinitionCreate.userErrors?.length) {
+        notes.push(`Definition "${def.ownerType}/${def.namespace}.${def.key}": ${JSON.stringify(result.metafieldDefinitionCreate.userErrors)}`);
+        bar.tick();
+        continue;
+      }
 
-    applied += 1;
-    existing.add(key);
+      applied += 1;
+      existing.add(key);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notes.push(`Definition "${def.ownerType}/${def.namespace}.${def.key}": failed — ${message}`);
+    }
     bar.tick();
   }
   bar.done();
