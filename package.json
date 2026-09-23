@@ -1,6 +1,6 @@
 {
   "name": "syncify",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "CLI to sync a Shopify Production store to a Dev store (products, collections, theme, metafields, metaobjects, files, menus, articles, content, discounts) with strict destination guards.",
   "type": "module",
   "private": true,
