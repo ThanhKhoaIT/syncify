@@ -304,25 +304,30 @@ create fine on Dev, but Shopify falls back to the default page template
 until the matching theme file exists there too.
 
 **Settings that reference a Production-only file** — an `image_picker` or
-`video` setting stores a `shopify://files/...` (or legacy
-`shopify://shop_images/...`) reference pointing at a file on the Files
-resource, which only exists on Production. `theme push` can hard-reject the
-push over a broken `video` reference (error: `Setting 'video' value does not
-point to an applicable shopify-hosted video resource`), or silently leave an
-`image_picker` setting empty. Unlike product/collection/page/blog links
-(which use a portable `shopify://products/<handle>`-style reference and
-resolve fine), there's no stable identity to resolve a file reference
-against (same root problem as the Files resource itself). Before every
-`theme push`, syncify now proactively scans the pulled theme's
-`config/*.json` and `templates/*.json` for exactly these two schemes and
-blanks the value to an empty placeholder — the same way the theme editor
-represents "unset" — so the push doesn't hard-reject at all; each blanked
-key is logged to `syncify.log`. The setting simply comes across empty on
-Dev rather than pointing at a broken reference; there's no cross-store fix
-for making it point at the right file, since Files sync isn't idempotent
-and doesn't preserve the original filename (see "Files" above). If a push
-still fails for some other reason, work around a hard-rejecting file with
-`themeIgnorePatterns` in `.syncifyrc.json`:
+`video` setting stores a `shopify://files/<type>/<filename>` (or legacy
+`shopify://shop_images/<filename>`) reference pointing at a file on the
+Files resource. `theme push` can hard-reject the push over a broken `video`
+reference (error: `Setting 'video' value does not point to an applicable
+shopify-hosted video resource`), or silently leave an `image_picker` setting
+empty. The `shopify://files/...` scheme resolves by **filename**, not by
+ID — so it's actually portable, as long as a file with that exact filename
+exists on Dev. The `files` resource (see "Files" above) matches
+`GenericFile`/`Video` to Dev by filename and pins new uploads to the same
+name, so as long as `files` runs before `theme` (its default position in
+`RESOURCE_ORDER`), a video/generic-file reference resolves correctly with no
+change to the setting value at all. Before every `theme push`, syncify
+double-checks this against Dev directly: it scans the pulled theme's
+`config/*.json` and `templates/*.json`, and only blanks a `shopify://files/...`
+value (to an empty placeholder — the same way the theme editor represents
+"unset") if no Dev file with that filename actually exists yet — e.g. the
+`files` resource wasn't run this pass, or the upload failed. `shopify://
+shop_images/...` (legacy) and `MediaImage`/`Model3d` file references (no
+stable filename field — see "Files" above) are always blanked, since there's
+nothing to match them against. Each blanked key is logged to `syncify.log`.
+product/collection/page/blog links use a different, always-portable
+`shopify://products/<handle>`-style reference and are unaffected by any of
+this. If a push still fails for some other reason, work around a
+hard-rejecting file with `themeIgnorePatterns` in `.syncifyrc.json`:
 
 ```sh
 syncify config set themeIgnorePatterns "templates/page.our-story.json,templates/index.json"
@@ -420,9 +425,12 @@ fixed on Production.
   free shipping, and automatic discounts are skipped and logged). This sync
   is not idempotent: re-running will attempt to recreate codes and fail on
   duplicates.
-- **Files** (`GenericFile`, `MediaImage`, `Video`, `Model3d`) have no stable
-  handle to match on, so this sync is **not idempotent**: re-running will
-  create duplicate files on Dev.
+- **Files**: `GenericFile` and `Video` have a stable `filename` field, so
+  they're matched to Dev by filename — a file already present under the same
+  name is skipped rather than duplicated, and new uploads are pinned to that
+  exact filename on create. `MediaImage` and `Model3d` have no equivalent
+  field, so those two still have **no stable handle to match on** and remain
+  **not idempotent**: re-running creates duplicates on Dev.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
   `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`,
   `MenuItemCreateInput`, `MenuItemUpdateInput`, `BlogCreateInput`,

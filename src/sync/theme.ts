@@ -90,41 +90,87 @@ function extractFailedFilePaths(output: string): string[] {
   return [...paths];
 }
 
-// Only these schemes are non-portable: they point at the Files resource,
-// which has no stable cross-store identity (same root problem as the
-// "files" sync resource — see README "Known limitations"). shopify://
-// product/collection/page/blog references are handle-based and already
-// portable, so they're deliberately left alone.
-const NON_PORTABLE_REFERENCE_PATTERN = /^shopify:\/\/(files|shop_images)\//i;
+// shopify://files/<type>/<filename> resolves by filename on whichever store
+// pushes it, not by ID — so if the "files" resource (src/sync/files.ts) has
+// already synced a GenericFile/Video to Dev under that exact filename, the
+// reference is already portable and left untouched. shopify://shop_images/...
+// (legacy) has no filename tracking on the Dev side, so it's always blanked.
+// shopify://product/collection/page/blog references are handle-based and
+// already portable, so they're deliberately left alone entirely.
+const FILES_SCHEME_PATTERN = /^shopify:\/\/files\/(.+)$/i;
+const SHOP_IMAGES_SCHEME_PATTERN = /^shopify:\/\/shop_images\//i;
 
-// Recursively blanks any string value matching NON_PORTABLE_REFERENCE_PATTERN,
-// anywhere in a JSON value (settings_data.json and templates/*.json nest
-// section/block settings arbitrarily deep). Blanking rather than deleting the
-// key mirrors how the theme editor represents "unset" for these setting
-// types, and avoids `theme push` hard-rejecting the whole file the same way
-// an unresolvable Production-only file reference does.
-function neutralizeReferences(value: unknown, path: string, replaced: string[]): unknown {
+const DEV_FILENAMES_QUERY = `#graphql
+  query DevFilenames($cursor: String) {
+    files(first: 50, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        __typename
+        ... on GenericFile { filename }
+        ... on Video { filename }
+      }
+    }
+  }
+`;
+
+async function fetchDevFilenames(ctx: SyncContext): Promise<Set<string>> {
+  const filenames = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    const data: any = await ctx.dev.query(DEV_FILENAMES_QUERY, { cursor });
+    for (const node of data.files.nodes) {
+      if (node.filename) filenames.add(node.filename.normalize('NFC'));
+    }
+    cursor = data.files.pageInfo.hasNextPage ? data.files.pageInfo.endCursor : null;
+  } while (cursor);
+  return filenames;
+}
+
+function extractFilesReferenceFilename(value: string): string | null {
+  const match = value.match(FILES_SCHEME_PATTERN);
+  if (!match) return null;
+  const segment = match[1].split('/').pop() ?? '';
+  try {
+    return decodeURIComponent(segment).normalize('NFC');
+  } catch {
+    return segment.normalize('NFC');
+  }
+}
+
+// Recursively blanks a non-portable file reference, anywhere in a JSON value
+// (settings_data.json and templates/*.json nest section/block settings
+// arbitrarily deep). Blanking rather than deleting the key mirrors how the
+// theme editor represents "unset" for these setting types, and avoids
+// `theme push` hard-rejecting the whole file the same way an unresolvable
+// Production-only file reference does.
+function neutralizeReferences(value: unknown, path: string, replaced: string[], devFilenames: Set<string>): unknown {
   if (typeof value === 'string') {
-    if (NON_PORTABLE_REFERENCE_PATTERN.test(value)) {
+    const filename = extractFilesReferenceFilename(value);
+    if (filename !== null) {
+      if (devFilenames.has(filename)) return value; // already synced to Dev under this name — leave resolvable as-is
+      replaced.push(path);
+      return '';
+    }
+    if (SHOP_IMAGES_SCHEME_PATTERN.test(value)) {
       replaced.push(path);
       return '';
     }
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map((v, i) => neutralizeReferences(v, `${path}[${i}]`, replaced));
+    return value.map((v, i) => neutralizeReferences(v, `${path}[${i}]`, replaced, devFilenames));
   }
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, v] of Object.entries(value)) {
-      out[key] = neutralizeReferences(v, path ? `${path}.${key}` : key, replaced);
+      out[key] = neutralizeReferences(v, path ? `${path}.${key}` : key, replaced, devFilenames);
     }
     return out;
   }
   return value;
 }
 
-function neutralizeJsonFile(filePath: string, relPath: string, replaced: string[]): void {
+function neutralizeJsonFile(filePath: string, relPath: string, replaced: string[], devFilenames: Set<string>): void {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
@@ -132,7 +178,7 @@ function neutralizeJsonFile(filePath: string, relPath: string, replaced: string[
     return; // not valid JSON — leave untouched, let push surface the real error
   }
   const fileReplaced: string[] = [];
-  const updated = neutralizeReferences(parsed, '', fileReplaced);
+  const updated = neutralizeReferences(parsed, '', fileReplaced, devFilenames);
   if (fileReplaced.length > 0) {
     writeFileSync(filePath, JSON.stringify(updated, null, 2));
     for (const key of fileReplaced) replaced.push(`${relPath}:${key}`);
@@ -156,22 +202,24 @@ function findJsonFiles(dir: string, out: string[]): void {
   }
 }
 
-// Blanks shopify://files/... and shopify://shop_images/... references in the
-// pulled theme's config/ and templates/ JSON before push, rather than
-// reactively parsing a push failure after the fact — targets just the
-// broken value instead of skipping the whole file via themeAutoSkipOnError.
-function neutralizeNonPortableReferences(tmpDir: string, notes: Notes): void {
+// Blanks shopify://files/... references whose filename isn't (yet) on Dev,
+// and shopify://shop_images/... references unconditionally, in the pulled
+// theme's config/ and templates/ JSON before push — rather than reactively
+// parsing a push failure after the fact. Targets just the broken value
+// instead of skipping the whole file via themeAutoSkipOnError.
+async function neutralizeNonPortableReferences(ctx: SyncContext, tmpDir: string, notes: Notes): Promise<void> {
+  const devFilenames = await fetchDevFilenames(ctx);
   const replaced: string[] = [];
   for (const dir of ['config', 'templates']) {
     const files: string[] = [];
     findJsonFiles(join(tmpDir, dir), files);
     for (const file of files) {
-      neutralizeJsonFile(file, relative(tmpDir, file), replaced);
+      neutralizeJsonFile(file, relative(tmpDir, file), replaced, devFilenames);
     }
   }
   if (replaced.length > 0) {
     notes.push(
-      `Blanked ${replaced.length} shopify://files/... or shopify://shop_images/... reference(s) to an empty placeholder before push (they point to Production-only files with no stable cross-store identity — same limitation as the "files" resource): ${replaced.join(', ')}`
+      `Blanked ${replaced.length} shopify://files/... or shopify://shop_images/... reference(s) to an empty placeholder before push (target file not found on Dev under a matching filename, or uses the legacy shop_images scheme which isn't filename-matched): ${replaced.join(', ')}`
     );
   }
 }
@@ -199,7 +247,7 @@ export async function syncTheme(ctx: SyncContext): Promise<SyncResult> {
       return { resource: 'theme', planned: 1, applied: 0, skipped: 0, noteCount: notes.length };
     }
 
-    neutralizeNonPortableReferences(tmpDir, notes);
+    await neutralizeNonPortableReferences(ctx, tmpDir, notes);
 
     const ignorePatterns = [...ctx.config.themeIgnorePatterns];
     if (ignorePatterns.length > 0) {
