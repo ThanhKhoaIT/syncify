@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { MetafieldBatcher } from '../metafieldBatcher.js';
 
 interface Metafield {
   namespace: string;
@@ -62,17 +63,6 @@ const PAGE_UPDATE = `#graphql
   }
 `;
 
-// Page-level metafields, upserted right after the page is created/updated.
-// Uses metafieldsSet (25 per call), same as shop and product metafields.
-const METAFIELDS_SET_MUTATION = `#graphql
-  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
-    metafieldsSet(metafields: $metafields) {
-      metafields { id namespace key }
-      userErrors { field message }
-    }
-  }
-`;
-
 export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   const notes: string[] = [
     "A page's assigned template (templateSuffix, e.g. \"contact\" for page.contact.json) is synced, but the template/section files themselves are theme files, not part of the Page resource — sync the \"theme\" resource too, or the page will reference a template that doesn't exist on Dev and fall back to the default.",
@@ -106,6 +96,7 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   } while (devCursor);
 
   let applied = 0;
+  const metafieldBatcher = new MetafieldBatcher(ctx.dev);
   const bar = createProgressBar(pages.length, 'content');
   for (const page of pages) {
     const existingId = existing.get(page.handle.normalize('NFC'));
@@ -130,23 +121,14 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
     applied += 1;
 
     const devPageId = payload.page.id;
-    const metafields = page.metafields.nodes;
-    for (let i = 0; i < metafields.length; i += 25) {
-      const batch = metafields.slice(i, i + 25).map((mf) => ({
-        ownerId: devPageId,
-        namespace: mf.namespace,
-        key: mf.key,
-        type: mf.type,
-        value: mf.value,
-      }));
-      const mfResult: any = await ctx.dev.mutate(METAFIELDS_SET_MUTATION, { metafields: batch });
-      if (mfResult.metafieldsSet.userErrors?.length) {
-        notes.push(`Page "${page.handle}" metafields: ${JSON.stringify(mfResult.metafieldsSet.userErrors)}`);
-      }
-    }
+    metafieldBatcher.add(devPageId, page.handle, page.metafields.nodes);
+    await metafieldBatcher.flushIfFull();
     bar.tick();
   }
   bar.done();
+
+  await metafieldBatcher.flushAll();
+  notes.push(...metafieldBatcher.drainNotes());
 
   return { resource: 'content', planned: pages.length, applied, skipped: pages.length - applied, notes };
 }

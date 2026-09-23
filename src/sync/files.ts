@@ -77,18 +77,27 @@ export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
     return { resource: 'files', planned: withUrls.length, applied: 0, skipped, notes };
   }
 
+  // fileCreate accepts up to 250 files per call (confirmed against Shopify's
+  // docs) — batched well under that ceiling to keep a single bad file from
+  // blocking too large a batch and to keep error attribution reasonably
+  // scoped.
+  const BATCH_SIZE = 50;
   let applied = 0;
   const bar = createProgressBar(withUrls.length, 'files');
-  for (const node of withUrls) {
+  for (let i = 0; i < withUrls.length; i += BATCH_SIZE) {
+    const batch = withUrls.slice(i, i + BATCH_SIZE);
     const result: any = await ctx.dev.mutate(FILE_CREATE, {
-      files: [{ alt: node.alt ?? undefined, contentType: contentType(node.__typename), originalSource: sourceUrl(node) }],
+      files: batch.map((node) => ({
+        alt: node.alt ?? undefined,
+        contentType: contentType(node.__typename),
+        originalSource: sourceUrl(node),
+      })),
     });
+    applied += result.fileCreate.files?.length ?? 0;
     if (result.fileCreate.userErrors?.length) {
-      notes.push(`File "${sourceUrl(node)}": ${JSON.stringify(result.fileCreate.userErrors)}`);
-    } else {
-      applied += 1;
+      notes.push(`Files batch starting at ${i}: ${JSON.stringify(result.fileCreate.userErrors)}`);
     }
-    bar.tick();
+    bar.tick(batch.length);
   }
   bar.done();
 

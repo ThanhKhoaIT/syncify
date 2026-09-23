@@ -1,5 +1,6 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
+import { MetafieldBatcher } from '../metafieldBatcher.js';
 
 interface Variant {
   sku: string | null;
@@ -69,17 +70,6 @@ const PRODUCTS_QUERY = `#graphql
           }
         }
       }
-    }
-  }
-`;
-
-// Product-level metafields, upserted right after productSet returns the dev
-// product's id. Uses metafieldsSet (25 per call), same as shop metafields.
-const METAFIELDS_SET_MUTATION = `#graphql
-  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
-    metafieldsSet(metafields: $metafields) {
-      metafields { id namespace key }
-      userErrors { field message }
     }
   }
 `;
@@ -155,6 +145,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
   }
 
   let applied = 0;
+  const metafieldBatcher = new MetafieldBatcher(ctx.dev);
   const bar = createProgressBar(products.length, 'products');
   for (const product of products) {
     const input = {
@@ -187,20 +178,8 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     applied += 1;
 
     const devProductId = result.productSet.product.id;
-    const metafields = product.metafields.nodes;
-    for (let i = 0; i < metafields.length; i += 25) {
-      const batch = metafields.slice(i, i + 25).map((mf) => ({
-        ownerId: devProductId,
-        namespace: mf.namespace,
-        key: mf.key,
-        type: mf.type,
-        value: mf.value,
-      }));
-      const mfResult: any = await ctx.dev.mutate(METAFIELDS_SET_MUTATION, { metafields: batch });
-      if (mfResult.metafieldsSet.userErrors?.length) {
-        notes.push(`Product "${product.handle}" metafields: ${JSON.stringify(mfResult.metafieldsSet.userErrors)}`);
-      }
-    }
+    metafieldBatcher.add(devProductId, product.handle, product.metafields.nodes);
+    await metafieldBatcher.flushIfFull();
 
     const existingMediaIds: string[] = result.productSet.product.media.nodes.map((m: { id: string }) => m.id);
     const images = product.media.nodes.filter((m) => m.__typename === 'MediaImage' && m.image?.url);
@@ -224,6 +203,9 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
     bar.tick();
   }
   bar.done();
+
+  await metafieldBatcher.flushAll();
+  notes.push(...metafieldBatcher.drainNotes());
 
   return { resource: 'products', planned: products.length, applied, skipped: products.length - applied, notes };
 }

@@ -227,6 +227,24 @@ gap first. Not skippable by `--yes` (it's a configuration problem, not a
 destination-safety confirmation). See "Getting the Production/Dev token"
 above for the full scope lists per resource.
 
+## Batching
+
+Two mutations genuinely support batching multiple independent items into
+one API call, and syncify uses both to cut request count:
+
+- **`metafieldsSet`** (25 items/call) — each item carries its own owner, so
+  `products.ts` and `content.ts` queue metafields across *different*
+  products/pages (via `src/metafieldBatcher.ts`) instead of one call per
+  owner, flushing every 25 regardless of how few fields any single owner
+  has.
+- **`fileCreate`** (250 items/call, batched here at 50) — `files.ts` sends
+  files in batches instead of one call per file.
+
+Metaobjects, discounts, pages, articles, menus, and collections have **no
+bulk mutation** in Shopify's Admin API — confirmed against the docs, not
+assumed — so those stay one API call per item; there's no batching
+available there to speed them up.
+
 ## Product title prefix
 
 Every product pushed to Dev has its title prefixed (default `"[DEV] "`), so
