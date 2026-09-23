@@ -5,11 +5,15 @@ import { Notes } from '../notes.js';
 interface FileNode {
   __typename: string;
   alt: string | null;
-  // Only GenericFile and Video expose a stable `filename` — used to match
-  // against Dev (idempotency) and to pin the destination name on create, so
-  // a shopify://files/<...>/<filename> theme setting reference (which
-  // resolves by filename, not by ID) keeps working after the file re-syncs.
-  // MediaImage/Model3d have no equivalent field, so they stay non-idempotent.
+  // Only Video exposes a stable `filename` field (confirmed via Shopify's
+  // schema docs — GenericFile has no equivalent field, despite earlier
+  // assumption otherwise; its `url`'s basename isn't reliable either, since
+  // Shopify may append a dedup suffix that doesn't match the original name).
+  // Used to match against Dev (idempotency) and to pin the destination name
+  // on create, so a shopify://files/videos/<filename> theme setting
+  // reference (which resolves by filename, not by ID) keeps working after
+  // the file re-syncs. GenericFile/MediaImage/Model3d have no equivalent
+  // field, so they stay non-idempotent.
   filename?: string;
   url?: string;
   image?: { url: string };
@@ -22,7 +26,7 @@ const FILES_QUERY = `#graphql
       pageInfo { hasNextPage endCursor }
       nodes {
         __typename
-        ... on GenericFile { alt url filename }
+        ... on GenericFile { alt url }
         ... on MediaImage { alt image { url } }
         ... on Video { alt sources { url } filename }
         ... on Model3d { alt sources { url } }
@@ -38,7 +42,6 @@ const DEV_FILES_QUERY = `#graphql
       pageInfo { hasNextPage endCursor }
       nodes {
         __typename
-        ... on GenericFile { filename }
         ... on Video { filename }
       }
     }
@@ -77,7 +80,7 @@ function contentType(typename: string): string {
 export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
   const notes = new Notes('files');
   notes.push(
-    'GenericFile/Video files are matched to Dev by filename — a file already present under the same name is skipped rather than duplicated, and new uploads are pinned to that exact filename so a shopify://files/.../<filename> theme setting reference keeps resolving. MediaImage/Model3d have no stable filename field to match on, so those still duplicate on every run.'
+    'Video files are matched to Dev by filename — a file already present under the same name is skipped rather than duplicated, and new uploads are pinned to that exact filename so a shopify://files/videos/<filename> theme setting reference keeps resolving. GenericFile/MediaImage/Model3d have no stable filename field to match on, so those still duplicate on every run.'
   );
 
   const nodes: FileNode[] = [];

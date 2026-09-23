@@ -319,10 +319,13 @@ shopify-hosted video resource`), or silently leave an `image_picker` setting
 empty. The `shopify://files/...` scheme resolves by **filename**, not by
 ID — so it's actually portable, as long as a file with that exact filename
 exists on Dev. The `files` resource (see "Files" above) matches
-`GenericFile`/`Video` to Dev by filename and pins new uploads to the same
-name, so as long as `files` runs before `theme` (its default position in
-`RESOURCE_ORDER`), a video/generic-file reference resolves correctly with no
-change to the setting value at all. Before every `theme push`, syncify
+`Video` to Dev by filename and pins new uploads to the same name, so as
+long as `files` runs before `theme` (its default position in
+`RESOURCE_ORDER`), a video reference resolves correctly with no change to
+the setting value at all. `GenericFile` has no stable filename field
+(confirmed via Shopify's schema — only `Video` does), so a
+`shopify://files/...` reference to one is still always blanked. Before
+every `theme push`, syncify
 double-checks this against Dev directly: it scans the pulled theme's
 `config/*.json` and `templates/*.json`, and only blanks a `shopify://files/...`
 value (to an empty placeholder — the same way the theme editor represents
@@ -463,12 +466,15 @@ fixed on Production.
   free shipping, and automatic discounts are skipped and logged). This sync
   is not idempotent: re-running will attempt to recreate codes and fail on
   duplicates.
-- **Files**: `GenericFile` and `Video` have a stable `filename` field, so
-  they're matched to Dev by filename — a file already present under the same
-  name is skipped rather than duplicated, and new uploads are pinned to that
-  exact filename on create. `MediaImage` and `Model3d` have no equivalent
-  field, so those two still have **no stable handle to match on** and remain
-  **not idempotent**: re-running creates duplicates on Dev.
+- **Files**: only `Video` has a stable `filename` field (confirmed via
+  Shopify's schema docs — `GenericFile` has no equivalent field despite an
+  earlier assumption otherwise, and its `url`'s basename isn't a reliable
+  substitute since Shopify may append a dedup suffix), so only videos are
+  matched to Dev by filename — a video already present under the same name
+  is skipped rather than duplicated, and new uploads are pinned to that
+  exact filename on create. `GenericFile`, `MediaImage`, and `Model3d` have
+  **no stable handle to match on** and remain **not idempotent**: re-running
+  creates duplicates of those on Dev.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
   `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`,
   `MenuItemCreateInput`, `MenuItemUpdateInput`, `BlogCreateInput`,

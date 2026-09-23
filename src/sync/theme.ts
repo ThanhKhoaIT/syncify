@@ -92,11 +92,15 @@ function extractFailedFilePaths(output: string): string[] {
 
 // shopify://files/<type>/<filename> resolves by filename on whichever store
 // pushes it, not by ID — so if the "files" resource (src/sync/files.ts) has
-// already synced a GenericFile/Video to Dev under that exact filename, the
-// reference is already portable and left untouched. shopify://shop_images/...
-// (legacy) has no filename tracking on the Dev side, so it's always blanked.
-// shopify://product/collection/page/blog references are handle-based and
-// already portable, so they're deliberately left alone entirely.
+// already synced a Video to Dev under that exact filename, the reference is
+// already portable and left untouched. Only Video has a stable `filename`
+// field (confirmed via Shopify's schema docs — GenericFile has none, and its
+// `url`'s basename isn't reliable since Shopify may append a dedup suffix),
+// so a shopify://files/... reference to a GenericFile/MediaImage/Model3d is
+// always blanked, same as shopify://shop_images/... (legacy, no filename
+// tracking either). shopify://product/collection/page/blog references are
+// handle-based and already portable, so they're deliberately left alone
+// entirely.
 const FILES_SCHEME_PATTERN = /^shopify:\/\/files\/(.+)$/i;
 const SHOP_IMAGES_SCHEME_PATTERN = /^shopify:\/\/shop_images\//i;
 
@@ -106,7 +110,6 @@ const DEV_FILENAMES_QUERY = `#graphql
       pageInfo { hasNextPage endCursor }
       nodes {
         __typename
-        ... on GenericFile { filename }
         ... on Video { filename }
       }
     }
