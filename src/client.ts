@@ -64,11 +64,19 @@ export class ShopifyClient {
           body: JSON.stringify({ query, variables }),
         });
       } catch (err) {
-        const cause = err instanceof Error && err.cause instanceof Error ? `: ${err.cause.message}` : '';
-        throw new Error(
-          `Network request to ${this.store} (${this.endpoint}) failed${cause}. Check the store domain is correct and reachable — this is not a Shopify API error.`,
-          { cause: err }
-        );
+        // A raw fetch() failure (headers timeout, connection reset, DNS
+        // blip) — not a Shopify API response at all. Retried the same as
+        // 429/THROTTLED below, since these are usually transient, before
+        // giving up and surfacing the "check the domain" message.
+        if (attempt >= MAX_RETRIES) {
+          const cause = err instanceof Error && err.cause instanceof Error ? `: ${err.cause.message}` : '';
+          throw new Error(
+            `Network request to ${this.store} (${this.endpoint}) failed${cause} after ${MAX_RETRIES} retries. Check the store domain is correct and reachable — this is not a Shopify API error.`,
+            { cause: err }
+          );
+        }
+        await sleep(BASE_DELAY_MS * 2 ** attempt);
+        continue;
       }
 
       if (res.status === 429) {
