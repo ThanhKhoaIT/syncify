@@ -64,6 +64,10 @@ function sourceUrl(node: FileNode): string | undefined {
   return node.url ?? node.image?.url ?? node.sources?.[0]?.url;
 }
 
+function extensionOf(nameOrUrl: string): string | undefined {
+  return nameOrUrl.split(/[?#]/)[0].match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+}
+
 function contentType(typename: string): string {
   switch (typename) {
     case 'MediaImage':
@@ -80,7 +84,7 @@ function contentType(typename: string): string {
 export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
   const notes = new Notes('files');
   notes.push(
-    'Video files are matched to Dev by filename — a file already present under the same name is skipped rather than duplicated, and new uploads are pinned to that exact filename so a shopify://files/videos/<filename> theme setting reference keeps resolving. GenericFile/MediaImage/Model3d have no stable filename field to match on, so those still duplicate on every run.'
+    'Video files are matched to Dev by filename — a file already present under the same name is skipped rather than duplicated. A new upload is pinned to that exact filename only when its extension matches the source Shopify actually serves; Shopify re-encodes video to .mp4/.m3u8 for delivery regardless of the original format, so e.g. a .webm video\'s filename almost never matches and uploads without a pinned name instead (logged per-file) — the video still syncs, but a shopify://files/videos/<filename> theme reference to it won\'t resolve. GenericFile/MediaImage/Model3d have no stable filename field to match on, so those still duplicate on every run.'
   );
 
   const nodes: FileNode[] = [];
@@ -119,20 +123,43 @@ export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
     notes.push(`${applied} file(s) already exist on Dev under a matching filename — skipped re-upload.`);
   }
 
+  // fileCreate rejects a `filename` whose extension doesn't match the
+  // extension of `originalSource` — and Shopify always re-encodes video to
+  // .mp4/.m3u8 (HLS) for delivery regardless of the original upload format,
+  // so a Video's own `filename` (e.g. "Video Banner.webm") almost never
+  // matches its `sources[0].url`'s real extension. fileUpdate has the exact
+  // same restriction (confirmed via Shopify's docs — "extension must match
+  // the original"), so this can't be worked around by renaming after the
+  // fact either. Uploading without a pinned filename is the only option
+  // left for these — the file still syncs, just under whatever name Shopify
+  // derives from the source URL, so a shopify://files/videos/<name> theme
+  // reference to it still won't resolve (see theme.ts).
+  const uploads = toUpload.map((node) => {
+    const url = sourceUrl(node)!;
+    let filename = node.filename;
+    if (filename && extensionOf(filename) !== extensionOf(url)) {
+      notes.push(
+        `File "${filename}": Shopify serves a re-encoded source (.${extensionOf(url) ?? 'unknown'}) whose extension doesn't match the original filename — fileCreate rejects a mismatched filename outright, so this uploads without a pinned name instead.`
+      );
+      filename = undefined;
+    }
+    return { node, filename };
+  });
+
   // fileCreate accepts up to 250 files per call (confirmed against Shopify's
   // docs) — batched well under that ceiling to keep a single bad file from
   // blocking too large a batch and to keep error attribution reasonably
   // scoped.
   const BATCH_SIZE = 50;
-  const bar = createProgressBar(toUpload.length, 'files');
-  for (let i = 0; i < toUpload.length; i += BATCH_SIZE) {
-    const batch = toUpload.slice(i, i + BATCH_SIZE);
+  const bar = createProgressBar(uploads.length, 'files');
+  for (let i = 0; i < uploads.length; i += BATCH_SIZE) {
+    const batch = uploads.slice(i, i + BATCH_SIZE);
     const result: any = await ctx.dev.mutate(FILE_CREATE, {
-      files: batch.map((node) => ({
+      files: batch.map(({ node, filename }) => ({
         alt: node.alt ?? undefined,
         contentType: contentType(node.__typename),
         originalSource: sourceUrl(node),
-        filename: node.filename ?? undefined,
+        filename: filename ?? undefined,
       })),
     });
     applied += result.fileCreate.files?.length ?? 0;

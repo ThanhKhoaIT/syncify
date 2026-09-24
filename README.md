@@ -357,14 +357,19 @@ reference (error: `Setting 'video' value does not point to an applicable
 shopify-hosted video resource`), or silently leave an `image_picker` setting
 empty. The `shopify://files/...` scheme resolves by **filename**, not by
 ID — so it's actually portable, as long as a file with that exact filename
-exists on Dev. The `files` resource (see "Files" above) matches
-`Video` to Dev by filename and pins new uploads to the same name, so as
-long as `files` runs before `theme` (its default position in
-`RESOURCE_ORDER`), a video reference resolves correctly with no change to
-the setting value at all. `GenericFile` has no stable filename field
-(confirmed via Shopify's schema — only `Video` does), so a
-`shopify://files/...` reference to one is still always blanked. Before
-every `theme push`, syncify
+exists on Dev. The `files` resource (see "Files" above) matches `Video` to
+Dev by filename and pins new uploads to the same name **only when the
+original file's extension matches what Shopify actually serves it as** —
+Shopify re-encodes every video to `.mp4`/`.m3u8` regardless of upload
+format, so a `.webm` video's filename can never be pinned this way
+(`fileCreate` rejects a mismatched extension outright) and it uploads
+without a pinned name instead. So as long as `files` runs before `theme`
+(its default position in `RESOURCE_ORDER`) *and* the video's original
+format survives re-encoding under the same extension (typically `.mp4`),
+the reference resolves with no change to the setting value at all; a
+`.webm` (or similarly re-encoded) reference still gets blanked, same as
+`GenericFile` — which has no stable filename field at all (confirmed via
+Shopify's schema — only `Video` does). Before every `theme push`, syncify
 double-checks this against Dev directly: it scans the pulled theme's
 `config/*.json` and `templates/*.json`, and only blanks a `shopify://files/...`
 value (to an empty placeholder — the same way the theme editor represents
@@ -531,10 +536,20 @@ fixed on Production.
   earlier assumption otherwise, and its `url`'s basename isn't a reliable
   substitute since Shopify may append a dedup suffix), so only videos are
   matched to Dev by filename — a video already present under the same name
-  is skipped rather than duplicated, and new uploads are pinned to that
-  exact filename on create. `GenericFile`, `MediaImage`, and `Model3d` have
-  **no stable handle to match on** and remain **not idempotent**: re-running
-  creates duplicates of those on Dev.
+  is skipped rather than duplicated. A new upload is pinned to that exact
+  filename only when its extension matches what Shopify actually serves at
+  `sources[0].url` — Shopify re-encodes every video to `.mp4`/`.m3u8` (HLS)
+  for delivery regardless of the original upload format, and `fileCreate`
+  rejects a `filename` whose extension doesn't match `originalSource`
+  outright (`fileUpdate` has the identical restriction, confirmed via
+  Shopify's docs, so this can't be fixed by renaming after the fact either).
+  A `.webm` video (or any format Shopify doesn't deliver as-is) therefore
+  always uploads without a pinned filename instead — it still syncs, just
+  under whatever name Shopify derives from the source URL, so a
+  `shopify://files/videos/<filename>` theme reference to it won't resolve
+  (see "Page templates and sections" above). `GenericFile`,
+  `MediaImage`, and `Model3d` have **no stable handle to match on** and
+  remain **not idempotent**: re-running creates duplicates of those on Dev.
 - GraphQL mutation input shapes (`ProductSetInput`, `DiscountCodeBasicInput`,
   `MetaobjectDefinitionCreateInput`, `MetaobjectUpsertInput`,
   `MenuItemCreateInput`, `MenuItemUpdateInput`, `BlogCreateInput`,
