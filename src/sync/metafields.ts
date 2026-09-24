@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { Notes } from '../notes.js';
+import { MetafieldBatcher } from '../metafieldBatcher.js';
 
 interface Metafield {
   namespace: string;
@@ -116,15 +117,6 @@ const SHOP_METAFIELDS_QUERY = `#graphql
 const SHOP_ID_QUERY = `#graphql
   query ShopId {
     shop { id }
-  }
-`;
-
-const METAFIELDS_SET_MUTATION = `#graphql
-  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
-    metafieldsSet(metafields: $metafields) {
-      metafields { id namespace key }
-      userErrors { field message }
-    }
   }
 `;
 
@@ -254,22 +246,10 @@ export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   }
 
   const devShop: any = await ctx.dev.query(SHOP_ID_QUERY);
-  const ownerId = devShop.shop.id;
-  const input = all.map((mf) => ({ ownerId, namespace: mf.namespace, key: mf.key, type: mf.type, value: mf.value }));
-
-  let valuesApplied = 0;
-  const bar = createProgressBar(input.length, 'metafields');
-  // metafieldsSet accepts at most 25 per call.
-  for (let i = 0; i < input.length; i += 25) {
-    const batch = input.slice(i, i + 25);
-    const result: any = await ctx.dev.mutate(METAFIELDS_SET_MUTATION, { metafields: batch });
-    if (result.metafieldsSet.userErrors?.length) {
-      notes.push(`Errors in batch starting at ${i}: ${JSON.stringify(result.metafieldsSet.userErrors)}`);
-    }
-    valuesApplied += result.metafieldsSet.metafields.length;
-    bar.tick(batch.length);
-  }
-  bar.done();
+  const batcher = new MetafieldBatcher(ctx.dev, notes);
+  batcher.add(devShop.shop.id, 'shop', all);
+  await batcher.flushAll();
+  const valuesApplied = all.length;
 
   const applied = definitionResult.applied + valuesApplied;
   return { resource: 'metafields', planned, applied, skipped: planned - applied, noteCount: notes.length };

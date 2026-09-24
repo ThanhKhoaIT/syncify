@@ -90,6 +90,17 @@ export class MetafieldBatcher {
           : `Metafields batch (owners: ${[...new Set(batch.map((b) => b.ownerLabel))].join(', ')}): ${err.message}`
       );
     }
+
+    // metafieldsSet is all-or-nothing: one rejected item means nothing in
+    // the batch was saved. Re-send the rest without the rejected items, so
+    // a single bad value can't silently drop up to 24 unrelated ones. Only
+    // when every error names its item — otherwise we can't tell what to
+    // drop, and the notes above already record the failure.
+    const rejected = userErrors.map((err) => (err.field?.[0] === 'metafields' ? Number(err.field[1]) : NaN));
+    if (rejected.length > 0 && rejected.every(Number.isInteger)) {
+      const rest = batch.filter((_, i) => !rejected.includes(i));
+      if (rest.length > 0) await this.flushBatch(rest);
+    }
   }
 
 }
