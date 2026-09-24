@@ -49,6 +49,14 @@ const OWNER_TYPES = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'PAGE', 'ARTICLE
 // file_reference's file_type) are plain values, portable as-is.
 const UNRESOLVABLE_DEFINITION_TYPES = new Set(['metaobject_reference', 'list.metaobject_reference', 'mixed_reference', 'list.mixed_reference']);
 
+// access.admin reads back values (e.g. PUBLIC_READ_WRITE, the default for
+// merchant-created definitions) that MetafieldDefinitionInput doesn't
+// accept — only the two MERCHANT_* values are settable. Anything else is
+// left unset so Dev gets the same default.
+export function adminAccessInput(admin: string | null): string | undefined {
+  return admin === 'MERCHANT_READ' || admin === 'MERCHANT_READ_WRITE' ? admin : undefined;
+}
+
 const DEFINITIONS_QUERY = `#graphql
   query MetafieldDefinitions($ownerType: MetafieldOwnerType!, $cursor: String) {
     metafieldDefinitions(ownerType: $ownerType, first: 100, after: $cursor) {
@@ -195,7 +203,7 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
           ownerType: def.ownerType,
           validations: def.validations.map((v) => ({ name: v.name, value: v.value })),
           access: {
-            admin: def.access.admin ?? undefined,
+            admin: adminAccessInput(def.access.admin),
             customerAccount: def.access.customerAccount,
             storefront: def.access.storefront ?? undefined,
           },

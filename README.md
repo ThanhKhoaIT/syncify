@@ -388,8 +388,9 @@ values — across Product/ProductVariant/Collection/Page/Article/Blog/Shop
 owner types, create-only, so as long as `metafields` runs before `theme`
 (its default position in `RESOURCE_ORDER`) this resolves with no change to
 the template at all. It still fails if: the definition's type is
-`metaobject_reference`/`mixed_reference` (skipped — same cross-definition
-dependency problem as metaobjects), `metafields` wasn't included in this
+`metaobject_reference`/`mixed_reference` and `relink` wasn't included in
+this sync's resource selection (those are created there, not by
+`metafields`), `metafields` wasn't included in this
 sync's resource selection, or the definition changed on Production after
 first being created on Dev (no update path). Fall back to
 `themeAutoSkipOnError`/`themeIgnorePatterns` for those cases — the error
@@ -479,19 +480,22 @@ fixed on Production.
   are resolved to the matching Dev-side record — matched by handle, or by
   handle+SKU for variants — instead of being dropped; a reference whose
   target hasn't synced to Dev (or no longer exists there) is still dropped
-  and logged per-entry. `metaobject_reference` and `mixed_reference` are
-  dropped from both definitions and entries, since resolving them would
-  require the referencing field *definition* to declare which Dev-side
-  metaobject definition it targets — needing definitions created in
-  dependency order plus an update path for existing ones, neither of which
-  is implemented. `file_reference` is dropped too — files have no stable
-  cross-store handle to match Production/Dev files by (see Files below). A
-  definition left with zero fields after dropping those is skipped
-  entirely; a definition with a mix of kept and dropped fields is still
-  created, just without the dropped ones — this is what previously made an
-  *entire* definition fail to create (and every entry under it fail with
-  "No metaobject definition exists") if any one of its fields was a
-  reference type.
+  and logged per-entry. `metaobject_reference`, `mixed_reference` and `file_reference` are
+  dropped by the `metaobjects` resource itself, and filled back in by the
+  `relink` resource, which runs after `metaobjects` and `files`: it adds
+  those fields to the existing Dev definitions (always as optional — a
+  required field can't be added to a definition that already has entries),
+  with `metaobject_definition_id(s)` validations translated to the Dev
+  definition IDs, then sets their entry values with Production GIDs
+  translated to Dev (metaobjects by type+handle, videos by filename, other
+  files by URL basename with Shopify's `_<uuid>` dedup suffix stripped).
+  Referenced files missing on Dev are uploaded from Production's CDN.
+  `relink` also creates the `metaobject_reference`/`mixed_reference`
+  metafield definitions `metafields` skips, and re-sets every
+  reference-typed metafield value on shop/products/collections/pages with
+  translated IDs. A definition left with zero fields after `metaobjects`
+  drops the reference ones is skipped entirely (and `relink` notes it
+  rather than creating it).
 - **Blogs and articles** (`articles` resource): matched by handle (blogs) and
   by blog-handle + article-handle (articles), so re-running is idempotent.
   Article images, comments, and article-level metafields are not synced.

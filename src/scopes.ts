@@ -27,6 +27,9 @@ export const RESOURCE_SCOPES: Record<string, string[]> = {
   menus: ['online_store_navigation'],
   articles: ['online_store_pages'],
   collections: ['products', 'publications'], // see the `publications` comment on `products` above — same reasoning
+  // Reads/writes every kind of record a reference can point at, plus the
+  // definitions it adds fields to.
+  relink: ['metaobjects', 'metaobject_definitions', 'files', 'products', 'online_store_pages'],
 };
 
 // Every distinct scope subject across all resources, regardless of which
