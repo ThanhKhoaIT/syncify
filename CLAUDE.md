@@ -82,6 +82,6 @@ Metaobjects, discounts, pages, articles, menus, and collections have no bulk mut
 Full list is in README.md "Known limitations" — the ones most likely to matter when editing sync modules:
 - Inventory levels and variant-level metafields are not synced.
 - Product images are fully reconciled (delete + re-create) every sync since media has no stable cross-store handle — same root problem affects `files.ts` (not idempotent, re-running duplicates files).
-- Metaobject reference-type fields are dropped (both definitions and entries); metaobject definition *updates* aren't synced, only creation of missing ones.
+- `metaobjects` drops metaobject/mixed/file reference fields (definitions and entries); `relink` (runs after `metaobjects` + `files`) adds those fields back as optional and sets their values by translating Production GIDs to Dev (see `IdTranslator` in `src/sync/relink.ts`). Other metaobject definition *updates* aren't synced, only creation of missing ones.
 - Discount codes: only basic percentage/fixed-amount, and not idempotent.
 - Menu items resolve by handle against Dev records that must already exist (hence `menus` runs last in `RESOURCE_ORDER`).

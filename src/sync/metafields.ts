@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { Notes } from '../notes.js';
+import { MetafieldBatcher } from '../metafieldBatcher.js';
 
 interface Metafield {
   namespace: string;
@@ -48,6 +49,14 @@ const OWNER_TYPES = ['PRODUCT', 'PRODUCTVARIANT', 'COLLECTION', 'PAGE', 'ARTICLE
 // here either. Every other type's validations (e.g. rating's scale_min/max,
 // file_reference's file_type) are plain values, portable as-is.
 const UNRESOLVABLE_DEFINITION_TYPES = new Set(['metaobject_reference', 'list.metaobject_reference', 'mixed_reference', 'list.mixed_reference']);
+
+// access.admin reads back values (e.g. PUBLIC_READ_WRITE, the default for
+// merchant-created definitions) that MetafieldDefinitionInput doesn't
+// accept — only the two MERCHANT_* values are settable. Anything else is
+// left unset so Dev gets the same default.
+export function adminAccessInput(admin: string | null): string | undefined {
+  return admin === 'MERCHANT_READ' || admin === 'MERCHANT_READ_WRITE' ? admin : undefined;
+}
 
 const DEFINITIONS_QUERY = `#graphql
   query MetafieldDefinitions($ownerType: MetafieldOwnerType!, $cursor: String) {
@@ -108,15 +117,6 @@ const SHOP_METAFIELDS_QUERY = `#graphql
 const SHOP_ID_QUERY = `#graphql
   query ShopId {
     shop { id }
-  }
-`;
-
-const METAFIELDS_SET_MUTATION = `#graphql
-  mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
-    metafieldsSet(metafields: $metafields) {
-      metafields { id namespace key }
-      userErrors { field message }
-    }
   }
 `;
 
@@ -195,7 +195,7 @@ async function syncDefinitions(ctx: SyncContext, notes: Notes): Promise<{ planne
           ownerType: def.ownerType,
           validations: def.validations.map((v) => ({ name: v.name, value: v.value })),
           access: {
-            admin: def.access.admin ?? undefined,
+            admin: adminAccessInput(def.access.admin),
             customerAccount: def.access.customerAccount,
             storefront: def.access.storefront ?? undefined,
           },
@@ -246,22 +246,10 @@ export async function syncMetafields(ctx: SyncContext): Promise<SyncResult> {
   }
 
   const devShop: any = await ctx.dev.query(SHOP_ID_QUERY);
-  const ownerId = devShop.shop.id;
-  const input = all.map((mf) => ({ ownerId, namespace: mf.namespace, key: mf.key, type: mf.type, value: mf.value }));
-
-  let valuesApplied = 0;
-  const bar = createProgressBar(input.length, 'metafields');
-  // metafieldsSet accepts at most 25 per call.
-  for (let i = 0; i < input.length; i += 25) {
-    const batch = input.slice(i, i + 25);
-    const result: any = await ctx.dev.mutate(METAFIELDS_SET_MUTATION, { metafields: batch });
-    if (result.metafieldsSet.userErrors?.length) {
-      notes.push(`Errors in batch starting at ${i}: ${JSON.stringify(result.metafieldsSet.userErrors)}`);
-    }
-    valuesApplied += result.metafieldsSet.metafields.length;
-    bar.tick(batch.length);
-  }
-  bar.done();
+  const batcher = new MetafieldBatcher(ctx.dev, notes);
+  batcher.add(devShop.shop.id, 'shop', all);
+  await batcher.flushAll();
+  const valuesApplied = all.length;
 
   const applied = definitionResult.applied + valuesApplied;
   return { resource: 'metafields', planned, applied, skipped: planned - applied, noteCount: notes.length };

@@ -15,6 +15,7 @@ import { syncFiles } from '../sync/files.js';
 import { syncMenus } from '../sync/menus.js';
 import { syncArticles } from '../sync/articles.js';
 import { syncCollections } from '../sync/collections.js';
+import { syncRelink } from '../sync/relink.js';
 
 export interface SyncFlags {
   resources?: string;
@@ -33,6 +34,7 @@ const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
   menus: syncMenus,
   articles: syncArticles,
   collections: syncCollections,
+  relink: syncRelink,
 };
 
 // Always applied regardless of how the user lists/selects resources —
@@ -51,6 +53,7 @@ const RESOURCE_ORDER = [
   'metaobjects',
   'discounts',
   'files',
+  'relink',
   'theme',
   'menus',
 ];
@@ -66,6 +69,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   menus: '🧭 Menus',
   articles: '📰 Articles & Blogs',
   collections: '🗂️  Collections',
+  relink: '🔗 Relink references',
 };
 
 export async function runSync(flags: SyncFlags): Promise<void> {
