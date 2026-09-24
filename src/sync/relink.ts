@@ -57,6 +57,13 @@ interface FieldDefinition {
   validations: Validation[];
 }
 
+interface Entry {
+  type: string;
+  handle: string;
+  fields: { key: string; type: string; value: string }[];
+  status: string | null;
+}
+
 interface Metafield {
   namespace: string;
   key: string;
@@ -71,6 +78,8 @@ const PROD_DEFINITIONS_QUERY = `#graphql
       nodes {
         id
         type
+        displayNameKey
+        capabilities { publishable { enabled } }
         fieldDefinitions { key name description type { name } validations { name value } }
       }
     }
@@ -81,7 +90,7 @@ const DEV_DEFINITIONS_QUERY = `#graphql
   query RelinkDevDefinitions($cursor: String) {
     metaobjectDefinitions(first: 50, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { id type fieldDefinitions { key } }
+      nodes { id type displayNameKey capabilities { publishable { enabled } } fieldDefinitions { key } }
     }
   }
 `;
@@ -131,7 +140,7 @@ const PROD_ENTRIES_QUERY = `#graphql
   query RelinkProdEntries($type: String!, $cursor: String) {
     metaobjects(type: $type, first: 100, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { handle fields { key type value } }
+      nodes { handle fields { key type value } capabilities { publishable { status } } }
     }
   }
 `;
@@ -145,9 +154,10 @@ const DEV_ENTRIES_QUERY = `#graphql
   }
 `;
 
-const ENTRY_UPDATE = `#graphql
-  mutation RelinkEntryUpdate($id: ID!, $metaobject: MetaobjectUpdateInput!) {
-    metaobjectUpdate(id: $id, metaobject: $metaobject) {
+// Matches by type+handle, so re-running is idempotent.
+const ENTRY_UPSERT = `#graphql
+  mutation RelinkEntryUpsert($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
+    metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
       metaobject { id }
       userErrors { field message }
     }
@@ -389,6 +399,14 @@ class IdTranslator {
     if (uploads.length > 0) this.notes.push(`Uploaded ${uploads.length} referenced file(s) missing on Dev.`);
   }
 
+  nodeOf(gid: string): ProdNode | undefined {
+    return this.prodNodes.get(gid);
+  }
+
+  registerMetaobject(type: string, handle: string, id: string): void {
+    this.devMetaobjects.set(`${type}::${handle}`, id);
+  }
+
   resolve(gid: string): string | null {
     const node = this.prodNodes.get(gid);
     if (!node) return null;
@@ -467,12 +485,12 @@ function fileKey(node: ProdNode): string | null {
 export async function syncRelink(ctx: SyncContext): Promise<SyncResult> {
   const notes = new Notes('relink');
   notes.push(
-    'Re-links cross-store references: adds metaobject_reference/mixed_reference/file_reference fields to existing Dev metaobject definitions (as optional fields — a required field can\'t be added to a definition that already has entries), creates the metaobject/mixed reference metafield definitions metafields.ts skips, and sets reference field/metafield values with Production GIDs translated to Dev (metaobjects by type+handle, products/collections/pages by handle, variants by handle+SKU, videos by filename, other files by URL basename). Referenced files missing on Dev are uploaded from Production\'s CDN.'
+    'Re-links cross-store references: adds metaobject_reference/mixed_reference/file_reference fields to existing Dev metaobject definitions (as optional fields — a required field can\'t be added to a definition that already has entries), enables the publishable capability and display-name field entries depend on, creates the metaobject/mixed reference metafield definitions metafields.ts skips, upserts every metaobject entry whole (in dependency order, so an entry is created after the entries it references), and sets reference metafield values with Production GIDs translated to Dev (metaobjects by type+handle, products/collections/pages by handle, variants by handle+SKU, videos by filename, other files by URL basename). Referenced files missing on Dev are uploaded from Production\'s CDN.'
   );
 
   const translator = new IdTranslator(ctx, notes);
 
-  const prodDefs = await paginate<{ id: string; type: string; fieldDefinitions: FieldDefinition[] }>(
+  const prodDefs = await paginate<{ id: string; type: string; displayNameKey: string | null; capabilities: { publishable: { enabled: boolean } }; fieldDefinitions: FieldDefinition[] }>(
     (cursor) => ctx.prod.query(PROD_DEFINITIONS_QUERY, { cursor }),
     (d) => d.metaobjectDefinitions
   );
@@ -486,16 +504,19 @@ export async function syncRelink(ctx: SyncContext): Promise<SyncResult> {
     prodMetafieldDefs.push(...nodes.filter((d) => RELINK_METAFIELD_DEFINITION_TYPES.has(d.type.name)));
   }
 
-  // Entry values: only the fields metaobjects.ts drops.
-  const entryUpdates: { type: string; handle: string; fields: { key: string; type: string; value: string }[] }[] = [];
-  for (const def of relinkDefs) {
-    const entries = await paginate<{ handle: string; fields: { key: string; type: string; value: string | null }[] }>(
-      (cursor) => ctx.prod.query(PROD_ENTRIES_QUERY, { type: def.type, cursor }),
-      (d) => d.metaobjects
-    );
-    for (const e of entries) {
-      const fields = e.fields.filter((f): f is { key: string; type: string; value: string } => f.value !== null && RELINK_FIELD_TYPES.has(f.type));
-      if (fields.length > 0) entryUpdates.push({ type: def.type, handle: e.handle, fields });
+  // Every entry, with every field: metaobjects.ts can't create an entry
+  // whose definition requires a reference field it drops, so entries are
+  // (re)upserted here whole, with references translated.
+  const entries: Entry[] = [];
+  for (const def of prodDefs) {
+    const nodes = await paginate<any>((cursor) => ctx.prod.query(PROD_ENTRIES_QUERY, { type: def.type, cursor }), (d) => d.metaobjects);
+    for (const e of nodes) {
+      entries.push({
+        type: def.type,
+        handle: e.handle,
+        fields: e.fields.filter((f: any) => f.value !== null),
+        status: e.capabilities?.publishable?.status ?? null,
+      });
     }
   }
 
@@ -514,29 +535,34 @@ export async function syncRelink(ctx: SyncContext): Promise<SyncResult> {
 
   const missingFieldCount = relinkDefs.reduce((n, d) => n + d.fieldDefinitions.filter((f) => RELINK_FIELD_TYPES.has(f.type.name)).length, 0);
   logger.step(
-    `Found ${missingFieldCount} reference field definition(s) across ${relinkDefs.length} metaobject definitions, ${prodMetafieldDefs.length} metaobject-reference metafield definitions, ${entryUpdates.length} entries and ${metafieldCount} metafield values to re-link.`
+    `Found ${missingFieldCount} reference field definition(s) across ${relinkDefs.length} metaobject definitions, ${prodMetafieldDefs.length} metaobject-reference metafield definitions, ${entries.length} entries and ${metafieldCount} metafield values to re-link.`
   );
 
-  const planned = relinkDefs.length + prodMetafieldDefs.length + entryUpdates.length + metafieldCount;
+  const planned = prodDefs.length + prodMetafieldDefs.length + entries.length + metafieldCount;
   if (!ctx.live) {
     notes.push(`Dry-run: ${planned} item(s) would be re-linked.`);
     return { resource: 'relink', planned, applied: 0, skipped: 0, noteCount: notes.length };
   }
 
-  const devDefs = await paginate<{ id: string; type: string; fieldDefinitions: { key: string }[] }>(
+  const devDefs = await paginate<{ id: string; type: string; displayNameKey: string | null; capabilities: { publishable: { enabled: boolean } }; fieldDefinitions: { key: string }[] }>(
     (cursor) => ctx.dev.query(DEV_DEFINITIONS_QUERY, { cursor }),
     (d) => d.metaobjectDefinitions
   );
   for (const d of devDefs) translator.devDefinitions.set(d.type, d.id);
+  const devDefByType = new Map(devDefs.map((d) => [d.type, d]));
   const devFieldKeys = new Map(devDefs.map((d) => [d.type, new Set(d.fieldDefinitions.map((f) => f.key))]));
+  const devPublishable = new Set(devDefs.filter((d) => d.capabilities.publishable.enabled).map((d) => d.type));
 
   let applied = 0;
   const bar = createProgressBar(planned, 'relink');
 
-  // 1. Reference fields on metaobject definitions.
-  for (const def of relinkDefs) {
-    const devId = translator.devDefinitions.get(def.type);
-    if (!devId) {
+  // 1. Metaobject definitions: missing reference fields, plus the
+  // publishable capability and display-name field, which entries depend on
+  // (an entry sent with a status is rejected if publishable is off; one
+  // whose display-name field is empty is rejected outright).
+  for (const def of prodDefs) {
+    const devDef = devDefByType.get(def.type);
+    if (!devDef) {
       notes.push(`Definition "${def.type}": not on Dev — run the "metaobjects" resource first.`);
       bar.tick();
       continue;
@@ -552,13 +578,21 @@ export async function syncRelink(ctx: SyncContext): Promise<SyncResult> {
       }
       creates.push({ create: { key: f.key, name: f.name, description: f.description ?? undefined, type: f.type.name, required: false, validations } });
     }
-    if (creates.length > 0) {
-      const result: any = await ctx.dev.mutate(DEFINITION_UPDATE, { id: devId, definition: { fieldDefinitions: creates } });
+    const update: any = {};
+    if (creates.length > 0) update.fieldDefinitions = creates;
+    if (def.capabilities.publishable.enabled && !devPublishable.has(def.type)) update.capabilities = { publishable: { enabled: true } };
+    const keysAfter = new Set([...existing, ...creates.map((c) => c.create.key)]);
+    if (def.displayNameKey && def.displayNameKey !== devDef.displayNameKey && keysAfter.has(def.displayNameKey)) update.displayNameKey = def.displayNameKey;
+
+    if (Object.keys(update).length > 0) {
+      const result: any = await ctx.dev.mutate(DEFINITION_UPDATE, { id: devDef.id, definition: update });
       if (result.metaobjectDefinitionUpdate.userErrors?.length) {
         notes.push(`Definition "${def.type}": ${JSON.stringify(result.metaobjectDefinitionUpdate.userErrors)}`);
         bar.tick();
         continue;
       }
+      for (const c of creates) existing.add(c.create.key);
+      if (update.capabilities) devPublishable.add(def.type);
     }
     applied += 1;
     bar.tick();
@@ -610,44 +644,81 @@ export async function syncRelink(ctx: SyncContext): Promise<SyncResult> {
 
   // Load every GID referenced by an entry or metafield value in one go.
   const gids = new Set<string>();
-  for (const e of entryUpdates) for (const f of e.fields) for (const g of parseIds(f.type, f.value)) gids.add(g);
+  for (const e of entries) for (const f of e.fields) if (isReferenceType(f.type)) for (const g of parseIds(f.type, f.value)) gids.add(g);
   for (const o of ownerValues) for (const m of o.metafields) for (const g of parseIds(m.type, m.value)) gids.add(g);
   await translator.load(gids);
 
-  // Dev IDs of the entries being updated themselves.
-  const devEntryIds = new Map<string, string>();
-  for (const type of new Set(entryUpdates.map((e) => e.type))) {
-    const nodes = await paginate<{ id: string; handle: string }>((cursor) => ctx.dev.query(DEV_ENTRIES_QUERY, { type, cursor }), (d) => d.metaobjects);
-    for (const n of nodes) devEntryIds.set(`${type}::${n.handle}`, n.id);
-  }
+  // 3. Entries, in dependency order: an entry referencing another entry
+  // that isn't on Dev yet waits for a later pass. When a pass makes no
+  // progress (a reference cycle, or a target that will never exist), the
+  // rest go anyway with those references dropped — re-running relink then
+  // fills a cycle in, since both sides exist by then.
+  const entryKey = (type: string, handle: string) => `${type}::${handle}`;
+  let pending = entries;
+  let forced = false;
+  while (pending.length > 0) {
+    const waiting = new Set(pending.map((e) => entryKey(e.type, e.handle)));
+    const next: Entry[] = [];
+    let progress = 0;
+    for (const e of pending) {
+      const self = entryKey(e.type, e.handle);
+      const blocked =
+        !forced &&
+        e.fields.some(
+          (f) =>
+            isReferenceType(f.type) &&
+            parseIds(f.type, f.value).some((g) => {
+              const n = translator.nodeOf(g);
+              return n?.kind === 'metaobject' && translator.resolve(g) === null && entryKey(n.type, n.handle) !== self && waiting.has(entryKey(n.type, n.handle));
+            })
+        );
+      if (blocked) {
+        next.push(e);
+        continue;
+      }
 
-  // 3. Reference field values on entries.
-  for (const e of entryUpdates) {
-    const id = devEntryIds.get(`${e.type}::${e.handle}`);
-    if (!id) {
-      notes.push(`Entry "${e.type}/${e.handle}": not on Dev — run the "metaobjects" resource first.`);
+      const devKeys = devFieldKeys.get(e.type);
+      if (!devKeys) {
+        notes.push(`Entry "${e.type}/${e.handle}": definition not on Dev — skipped.`);
+        bar.tick();
+        continue;
+      }
+      let unresolved = 0;
+      const missingKeys: string[] = [];
+      const fields: { key: string; value: string }[] = [];
+      for (const f of e.fields) {
+        if (!devKeys.has(f.key)) {
+          missingKeys.push(f.key);
+          continue;
+        }
+        if (!isReferenceType(f.type)) {
+          fields.push({ key: f.key, value: f.value });
+          continue;
+        }
+        const t = translator.translate(f.type, f.value);
+        unresolved += t.unresolved;
+        if (t.value !== null) fields.push({ key: f.key, value: t.value });
+      }
+      if (missingKeys.length > 0) notes.push(`Entry "${e.type}/${e.handle}": field(s) ${missingKeys.join(', ')} not on the Dev definition — dropped.`);
+      if (unresolved > 0) notes.push(`Entry "${e.type}/${e.handle}": ${unresolved} reference(s) had no Dev counterpart — dropped.`);
+
+      const metaobject: any = { fields };
+      if (e.status && devPublishable.has(e.type)) metaobject.capabilities = { publishable: { status: e.status } };
+      const result: any = await ctx.dev.mutate(ENTRY_UPSERT, { handle: { type: e.type, handle: e.handle }, metaobject });
+      if (result.metaobjectUpsert.userErrors?.length) {
+        notes.push(`Entry "${e.type}/${e.handle}": ${JSON.stringify(result.metaobjectUpsert.userErrors)}`);
+      } else {
+        translator.registerMetaobject(e.type, e.handle, result.metaobjectUpsert.metaobject.id);
+        applied += 1;
+        progress += 1;
+      }
       bar.tick();
-      continue;
     }
-    let unresolved = 0;
-    const fields: { key: string; value: string }[] = [];
-    for (const f of e.fields) {
-      const t = translator.translate(f.type, f.value);
-      unresolved += t.unresolved;
-      if (t.value !== null) fields.push({ key: f.key, value: t.value });
+    if (next.length > 0 && progress === 0) {
+      notes.push(`${next.length} entr(ies) wait on each other (reference cycle or missing target) — upserting them with those references dropped; re-run relink to fill cycles in.`);
+      forced = true;
     }
-    if (unresolved > 0) notes.push(`Entry "${e.type}/${e.handle}": ${unresolved} reference(s) had no Dev counterpart — dropped.`);
-    if (fields.length === 0) {
-      bar.tick();
-      continue;
-    }
-    const result: any = await ctx.dev.mutate(ENTRY_UPDATE, { id, metaobject: { fields } });
-    if (result.metaobjectUpdate.userErrors?.length) {
-      notes.push(`Entry "${e.type}/${e.handle}": ${JSON.stringify(result.metaobjectUpdate.userErrors)}`);
-    } else {
-      applied += 1;
-    }
-    bar.tick();
+    pending = next;
   }
 
   // 4. Reference-typed metafield values on shop/products/collections/pages.

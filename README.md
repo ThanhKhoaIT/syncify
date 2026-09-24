@@ -486,7 +486,12 @@ fixed on Production.
   those fields to the existing Dev definitions (always as optional — a
   required field can't be added to a definition that already has entries),
   with `metaobject_definition_id(s)` validations translated to the Dev
-  definition IDs, then sets their entry values with Production GIDs
+  definition IDs (and enables the `publishable` capability and
+  `displayNameKey` to match Production, without which entries are
+  rejected), then upserts every entry whole — plain fields as-is,
+  references translated — in dependency order, so an entry is created
+  after the entries it points at (a reference cycle is upserted with those
+  references dropped; re-running `relink` fills it in). Production GIDs are
   translated to Dev (metaobjects by type+handle, videos by filename, other
   files by URL basename with Shopify's `_<uuid>` dedup suffix stripped).
   Referenced files missing on Dev are uploaded from Production's CDN.
