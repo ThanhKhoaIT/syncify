@@ -180,6 +180,15 @@ const PROD_NODES_QUERY = `#graphql
   }
 `;
 
+const PROD_VIDEOS_QUERY = `#graphql
+  query RelinkProdVideos($cursor: String) {
+    files(first: 250, after: $cursor, query: "media_type:VIDEO") {
+      pageInfo { hasNextPage endCursor }
+      nodes { id }
+    }
+  }
+`;
+
 const DEV_FILES_QUERY = `#graphql
   query RelinkDevFiles($cursor: String) {
     files(first: 250, after: $cursor) {
@@ -379,14 +388,36 @@ class IdTranslator {
       this.notes.push(`${missing.size - uploads.length} referenced file(s) have no source URL on Production yet (still processing) — their references stay unresolved.`);
     }
 
-    for (let i = 0; i < uploads.length; i += 50) {
-      const batch = uploads.slice(i, i + 50);
+    // fileCreate rejects a video's external URL ("Invalid video url") —
+    // videos must go through a staged upload first. One bad file fails its
+    // whole fileCreate batch, so videos are also created one at a time.
+    let uploaded = 0;
+    for (const [key, n] of uploads.filter(([, n]) => n.kind === 'video')) {
+      const video = n as Extract<ProdNode, { kind: 'video' }>;
+      try {
+        const resourceUrl = await stagedUpload(this.ctx, video.url!, video.filename);
+        const result: any = await this.ctx.dev.mutate(FILE_CREATE, {
+          files: [{ originalSource: resourceUrl, alt: video.alt ?? undefined, contentType: 'VIDEO', filename: video.filename }],
+        });
+        if (result.fileCreate.userErrors?.length) {
+          this.notes.push(`Video "${video.filename}": ${JSON.stringify(result.fileCreate.userErrors)}`);
+          continue;
+        }
+        this.devFiles.set(key, result.fileCreate.files[0].id);
+        uploaded += 1;
+      } catch (err) {
+        this.notes.push(`Video "${video.filename}": upload failed — ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    const others = uploads.filter(([, n]) => n.kind !== 'video');
+    for (let i = 0; i < others.length; i += 50) {
+      const batch = others.slice(i, i + 50);
       const result: any = await this.ctx.dev.mutate(FILE_CREATE, {
         files: batch.map(([, n]) => ({
           originalSource: (n as any).url,
           alt: (n as any).alt ?? undefined,
-          contentType: n.kind === 'video' ? 'VIDEO' : n.kind === 'image' ? 'IMAGE' : 'FILE',
-          filename: n.kind === 'video' ? n.filename : undefined,
+          contentType: n.kind === 'image' ? 'IMAGE' : 'FILE',
         })),
       });
       if (result.fileCreate.userErrors?.length) {
@@ -395,8 +426,9 @@ class IdTranslator {
       }
       // fileCreate returns files in input order.
       (result.fileCreate.files as { id: string }[]).forEach((f, idx) => this.devFiles.set(batch[idx][0], f.id));
+      uploaded += batch.length;
     }
-    if (uploads.length > 0) this.notes.push(`Uploaded ${uploads.length} referenced file(s) missing on Dev.`);
+    if (uploads.length > 0) this.notes.push(`Uploaded ${uploaded} of ${uploads.length} file(s) missing on Dev.`);
   }
 
   nodeOf(gid: string): ProdNode | undefined {
@@ -451,6 +483,41 @@ class IdTranslator {
     }
     return out;
   }
+}
+
+const STAGED_UPLOADS_CREATE = `#graphql
+  mutation RelinkStagedUploads($input: [StagedUploadInput!]!) {
+    stagedUploadsCreate(input: $input) {
+      stagedTargets { url resourceUrl parameters { name value } }
+      userErrors { field message }
+    }
+  }
+`;
+
+const VIDEO_MIME: Record<string, string> = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' };
+
+// Downloads a Production file and stages it on Dev; returns the
+// resourceUrl fileCreate accepts as originalSource.
+// ponytail: whole video buffered in memory, stream it if videos grow past a few hundred MB.
+async function stagedUpload(ctx: SyncContext, sourceUrl: string, filename: string): Promise<string> {
+  const res = await fetch(sourceUrl);
+  if (!res.ok) throw new Error(`download ${res.status} ${res.statusText}`);
+  const body = await res.blob();
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  const mimeType = VIDEO_MIME[ext] ?? (body.type || 'video/mp4');
+
+  const staged: any = await ctx.dev.mutate(STAGED_UPLOADS_CREATE, {
+    input: [{ resource: 'VIDEO', filename, mimeType, fileSize: String(body.size), httpMethod: 'POST' }],
+  });
+  if (staged.stagedUploadsCreate.userErrors?.length) throw new Error(JSON.stringify(staged.stagedUploadsCreate.userErrors));
+  const target = staged.stagedUploadsCreate.stagedTargets[0];
+
+  const form = new FormData();
+  for (const p of target.parameters) form.append(p.name, p.value);
+  form.append('file', body, filename);
+  const upload = await fetch(target.url, { method: 'POST', body: form });
+  if (!upload.ok) throw new Error(`staged upload ${upload.status} ${upload.statusText}`);
+  return target.resourceUrl;
 }
 
 function toProdNode(n: any): ProdNode | null {
@@ -570,7 +637,7 @@ export async function syncRelink(ctx: SyncContext): Promise<SyncResult> {
     const existing = devFieldKeys.get(def.type)!;
     const creates = [];
     for (const f of def.fieldDefinitions) {
-      if (!RELINK_FIELD_TYPES.has(f.type.name) || existing.has(f.key)) continue;
+      if (existing.has(f.key)) continue;
       const validations = translator.translateValidations(f.validations);
       if (!validations) {
         notes.push(`Definition "${def.type}" field "${f.key}": target metaobject definition not on Dev — skipped.`);
@@ -646,6 +713,10 @@ export async function syncRelink(ctx: SyncContext): Promise<SyncResult> {
   const gids = new Set<string>();
   for (const e of entries) for (const f of e.fields) if (isReferenceType(f.type)) for (const g of parseIds(f.type, f.value)) gids.add(g);
   for (const o of ownerValues) for (const m of o.metafields) for (const g of parseIds(m.type, m.value)) gids.add(g);
+  // Theme settings reference videos by filename (shopify://files/videos/…),
+  // not through any field, so every Production video is carried over.
+  const prodVideos = await paginate<{ id: string }>((cursor) => ctx.prod.query(PROD_VIDEOS_QUERY, { cursor }), (d) => d.files);
+  for (const v of prodVideos) gids.add(v.id);
   await translator.load(gids);
 
   // 3. Entries, in dependency order: an entry referencing another entry
