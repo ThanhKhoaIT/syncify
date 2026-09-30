@@ -16,11 +16,13 @@ import { syncMenus } from '../sync/menus.js';
 import { syncArticles } from '../sync/articles.js';
 import { syncCollections } from '../sync/collections.js';
 import { syncRelink } from '../sync/relink.js';
+import { parseSince } from '../since.js';
 
 export interface SyncFlags {
   resources?: string;
   live?: boolean;
   yes?: boolean;
+  since?: string;
 }
 
 const RUNNERS: Record<string, (ctx: SyncContext) => Promise<SyncResult>> = {
@@ -58,6 +60,11 @@ const RESOURCE_ORDER = [
   'menus',
 ];
 
+// Resources whose Production query takes an updated_at filter under
+// --since. The rest always read everything: menus/theme/metafields have no
+// such filter, and relink must see every reference to translate it.
+const SINCE_FILTERABLE = new Set(['files', 'products', 'content', 'articles', 'collections', 'metaobjects', 'discounts']);
+
 const RESOURCE_LABELS: Record<string, string> = {
   products: '📦 Products',
   theme: '🎨 Theme',
@@ -77,6 +84,7 @@ export async function runSync(flags: SyncFlags): Promise<void> {
   let resources = flags.resources ? flags.resources.split(',').map((r) => r.trim()) : config.resources;
   const live = flags.live ?? false;
   const yes = flags.yes ?? false;
+  const since = flags.since ? parseSince(flags.since) : undefined;
 
   const unknown = resources.filter((r) => !RUNNERS[r]);
   if (unknown.length > 0) {
@@ -89,7 +97,8 @@ export async function runSync(flags: SyncFlags): Promise<void> {
   const dev = new ShopifyClient({ store: config.devStore, token: config.devToken, role: 'dev' });
 
   logger.info(
-    `Sync plan: ${resources.join(', ')} | ${config.prodStore} -> ${config.devStore} | mode: ${live ? 'LIVE' : 'DRY-RUN'}`
+    `Sync plan: ${resources.join(', ')} | ${config.prodStore} -> ${config.devStore} | mode: ${live ? 'LIVE' : 'DRY-RUN'}` +
+      (since ? ` | since: ${since.toISOString()}` : '')
   );
 
   if (live) {
@@ -118,7 +127,14 @@ export async function runSync(flags: SyncFlags): Promise<void> {
   await assertRequiredScopes(prod, dev, resources);
   logger.success('Scope check passed — both tokens have the permissions these resources need.');
 
-  const ctx: SyncContext = { prod, dev, config, live };
+  if (since) {
+    const unfiltered = resources.filter((r) => !SINCE_FILTERABLE.has(r));
+    if (unfiltered.length > 0) {
+      logger.warn(`--since doesn't apply to: ${unfiltered.join(', ')} — these still sync everything.`);
+    }
+  }
+
+  const ctx: SyncContext = { prod, dev, config, live, since };
   const results: SyncResult[] = [];
 
   async function runOne(resource: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { Notes } from '../notes.js';
+import { sinceQuery } from '../since.js';
 
 interface Blog {
   handle: string;
@@ -37,8 +38,8 @@ const DEV_BLOGS_QUERY = `#graphql
 `;
 
 const ARTICLES_QUERY = `#graphql
-  query Articles($cursor: String) {
-    articles(first: 50, after: $cursor) {
+  query Articles($cursor: String, $query: String) {
+    articles(first: 50, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
         handle
@@ -107,7 +108,7 @@ export async function syncArticles(ctx: SyncContext): Promise<SyncResult> {
   const articles: Article[] = [];
   cursor = null;
   do {
-    const data: any = await ctx.prod.query(ARTICLES_QUERY, { cursor });
+    const data: any = await ctx.prod.query(ARTICLES_QUERY, { cursor, query: sinceQuery(ctx.since) });
     articles.push(...data.articles.nodes);
     cursor = data.articles.pageInfo.hasNextPage ? data.articles.pageInfo.endCursor : null;
   } while (cursor);

@@ -1,10 +1,11 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { Notes } from '../notes.js';
+import { sinceQuery } from '../since.js';
 
 const DISCOUNTS_QUERY = `#graphql
-  query CodeDiscounts($cursor: String) {
-    codeDiscountNodes(first: 50, after: $cursor) {
+  query CodeDiscounts($cursor: String, $query: String) {
+    codeDiscountNodes(first: 50, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
         id
@@ -52,7 +53,7 @@ export async function syncDiscounts(ctx: SyncContext): Promise<SyncResult> {
   let cursor: string | null = null;
 
   do {
-    const data: any = await ctx.prod.query(DISCOUNTS_QUERY, { cursor });
+    const data: any = await ctx.prod.query(DISCOUNTS_QUERY, { cursor, query: sinceQuery(ctx.since) });
     for (const node of data.codeDiscountNodes.nodes) {
       if (node.codeDiscount.__typename === 'DiscountCodeBasic') {
         supported.push(node.codeDiscount);

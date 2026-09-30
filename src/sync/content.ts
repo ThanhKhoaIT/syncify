@@ -2,6 +2,7 @@ import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { MetafieldBatcher } from '../metafieldBatcher.js';
 import { Notes } from '../notes.js';
+import { sinceQuery } from '../since.js';
 
 interface Metafield {
   namespace: string;
@@ -20,8 +21,8 @@ interface Page {
 }
 
 const PAGES_QUERY = `#graphql
-  query Pages($cursor: String) {
-    pages(first: 50, after: $cursor) {
+  query Pages($cursor: String, $query: String) {
+    pages(first: 50, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
         handle
@@ -73,7 +74,7 @@ export async function syncContent(ctx: SyncContext): Promise<SyncResult> {
   let cursor: string | null = null;
 
   do {
-    const data: any = await ctx.prod.query(PAGES_QUERY, { cursor });
+    const data: any = await ctx.prod.query(PAGES_QUERY, { cursor, query: sinceQuery(ctx.since) });
     pages.push(...data.pages.nodes);
     cursor = data.pages.pageInfo.hasNextPage ? data.pages.pageInfo.endCursor : null;
   } while (cursor);

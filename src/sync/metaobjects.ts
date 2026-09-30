@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { Notes } from '../notes.js';
+import { sinceQuery } from '../since.js';
 
 // Field types whose value holds a GID pointing at another resource. Some of
 // these (product/collection/page/variant) are resolved below by matching
@@ -181,8 +182,8 @@ const DEV_PAGES_HANDLE_QUERY = `#graphql
 // "publishable" capability enabled, via schema introspection for the pinned
 // apiVersion before the first live run.
 const ENTRIES_QUERY = `#graphql
-  query MetaobjectEntries($type: String!, $cursor: String) {
-    metaobjects(type: $type, first: 50, after: $cursor) {
+  query MetaobjectEntries($type: String!, $cursor: String, $query: String) {
+    metaobjects(type: $type, first: 50, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
         handle
@@ -229,7 +230,7 @@ export async function syncMetaobjects(ctx: SyncContext): Promise<SyncResult> {
   for (const def of definitions) {
     let entryCursor: string | null = null;
     do {
-      const data: any = await ctx.prod.query(ENTRIES_QUERY, { type: def.type, cursor: entryCursor });
+      const data: any = await ctx.prod.query(ENTRIES_QUERY, { type: def.type, cursor: entryCursor, query: sinceQuery(ctx.since) });
       entries.push(...data.metaobjects.nodes);
       entryCursor = data.metaobjects.pageInfo.hasNextPage ? data.metaobjects.pageInfo.endCursor : null;
     } while (entryCursor);

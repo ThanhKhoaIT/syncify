@@ -2,6 +2,7 @@ import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { OnlineStorePublisher } from '../publish.js';
 import { Notes } from '../notes.js';
+import { sinceQuery } from '../since.js';
 
 interface RuleSetRule {
   column: string;
@@ -31,8 +32,8 @@ interface Collection {
 }
 
 const COLLECTIONS_QUERY = `#graphql
-  query Collections($cursor: String) {
-    collections(first: 50, after: $cursor) {
+  query Collections($cursor: String, $query: String) {
+    collections(first: 50, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
         handle
@@ -130,7 +131,7 @@ export async function syncCollections(ctx: SyncContext): Promise<SyncResult> {
   const collections: Collection[] = [];
   let cursor: string | null = null;
   do {
-    const data: any = await ctx.prod.query(COLLECTIONS_QUERY, { cursor });
+    const data: any = await ctx.prod.query(COLLECTIONS_QUERY, { cursor, query: sinceQuery(ctx.since) });
     collections.push(...data.collections.nodes);
     cursor = data.collections.pageInfo.hasNextPage ? data.collections.pageInfo.endCursor : null;
   } while (cursor);

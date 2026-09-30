@@ -3,6 +3,7 @@ import { logger, createProgressBar } from '../logger.js';
 import { MetafieldBatcher } from '../metafieldBatcher.js';
 import { OnlineStorePublisher } from '../publish.js';
 import { Notes } from '../notes.js';
+import { sinceQuery } from '../since.js';
 
 interface Variant {
   sku: string | null;
@@ -40,8 +41,8 @@ interface Product {
 }
 
 const PRODUCTS_QUERY = `#graphql
-  query Products($cursor: String) {
-    products(first: 50, after: $cursor) {
+  query Products($cursor: String, $query: String) {
+    products(first: 50, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
         handle
@@ -143,7 +144,7 @@ export async function syncProducts(ctx: SyncContext): Promise<SyncResult> {
   let cursor: string | null = null;
 
   do {
-    const data: any = await ctx.prod.query(PRODUCTS_QUERY, { cursor });
+    const data: any = await ctx.prod.query(PRODUCTS_QUERY, { cursor, query: sinceQuery(ctx.since) });
     products.push(...data.products.nodes);
     cursor = data.products.pageInfo.hasNextPage ? data.products.pageInfo.endCursor : null;
   } while (cursor);

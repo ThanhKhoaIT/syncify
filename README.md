@@ -211,7 +211,7 @@ syncify init-apps [--path <dir>]      # generate shopify.app.toml templates (loc
 syncify config list
 syncify config get <key>              # e.g. resources, guard.allowedDevPlanNames
 syncify config set <key> <value>      # comma-separate list values
-syncify sync [--resources <list>] [--live] [--yes]
+syncify sync [--resources <list>] [--live] [--yes] [--since <date>]
 syncify -h | --help                   # or: syncify <command> -h
 ```
 
@@ -229,6 +229,36 @@ always run last.
 Resources run one at a time, in that order, each with its own live progress
 bar. `src/client.ts` retries rate-limited requests (HTTP 429 or a GraphQL
 `THROTTLED` error) with exponential backoff, up to 5 attempts.
+
+## Incremental sync (`--since`)
+
+```sh
+syncify sync --resources files --since 7d --live   # files updated in the last 7 days
+syncify sync --since 2026-09-23 --live             # everything filterable, updated since that date (UTC)
+```
+
+`--since` takes an ISO date/datetime (`2026-09-23`, `2026-09-23T10:00:00Z`)
+or a relative window (`7d`, `24h`, `30m`), and adds an
+`updated_at:>='<date>'` filter to the **Production** query of: `files`,
+`products`, `content` (pages), `articles`, `collections`, `metaobjects`
+(entries), `discounts`. Records created *or* modified since the date are
+included.
+
+What it deliberately does not filter:
+
+- `menus`, `metafields`, `theme`, `relink` — no date filter available, or
+  (for `relink`) every reference must be seen to translate it. These still
+  sync everything; a warning lists them when combined with `--since`.
+- Blogs (under `articles`) and metaobject definitions (under
+  `metaobjects`) — articles/entries depend on their parent existing on Dev,
+  so those always sync in full.
+- Dev-side lookups (handle→id maps, the files filename check) still scan
+  all of Dev, so idempotency matching is unaffected.
+
+Caveat: a record that references something older than the window (e.g. a
+collection's manual member product, a menu item) only resolves if that
+target already exists on Dev from an earlier full sync — otherwise it's
+skipped and logged, same as today.
 
 ## Scope check
 

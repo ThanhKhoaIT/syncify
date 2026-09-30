@@ -1,6 +1,7 @@
 import { SyncContext, SyncResult } from '../types.js';
 import { logger, createProgressBar } from '../logger.js';
 import { Notes } from '../notes.js';
+import { sinceQuery } from '../since.js';
 
 interface FileNode {
   __typename: string;
@@ -21,8 +22,8 @@ interface FileNode {
 }
 
 const FILES_QUERY = `#graphql
-  query Files($cursor: String) {
-    files(first: 50, after: $cursor) {
+  query Files($cursor: String, $query: String) {
+    files(first: 50, after: $cursor, query: $query) {
       pageInfo { hasNextPage endCursor }
       nodes {
         __typename
@@ -90,7 +91,7 @@ export async function syncFiles(ctx: SyncContext): Promise<SyncResult> {
   const nodes: FileNode[] = [];
   let cursor: string | null = null;
   do {
-    const data: any = await ctx.prod.query(FILES_QUERY, { cursor });
+    const data: any = await ctx.prod.query(FILES_QUERY, { cursor, query: sinceQuery(ctx.since) });
     nodes.push(...data.files.nodes);
     cursor = data.files.pageInfo.hasNextPage ? data.files.pageInfo.endCursor : null;
   } while (cursor);

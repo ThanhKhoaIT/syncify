@@ -6,6 +6,9 @@ export interface SyncContext {
   dev: ShopifyClient;
   config: ResolvedConfig;
   live: boolean;
+  // From `sync --since`: when set, date-filterable modules only read
+  // Production records with updated_at >= this (see src/since.ts).
+  since?: Date;
 }
 
 export interface SyncResult {

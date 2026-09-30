@@ -63,6 +63,10 @@ program
   .option('--resources <list>', 'Comma-separated resources to sync (overrides .syncifyrc.json)')
   .option('--live', 'Actually write changes (default is dry-run)')
   .option('--yes', 'Skip the interactive confirmation prompt (the destination plan-check guard still always runs)')
+  .option(
+    '--since <date>',
+    'Only sync Production records updated since this date — ISO date (2026-09-23) or relative (7d, 24h, 30m). Applies to files, products, content, articles, collections, metaobjects, discounts'
+  )
   .action(async (opts) => {
     await runSync(opts);
   });
