@@ -595,3 +595,24 @@ fixed on Production.
   periodically — Shopify retires versions ~12 months after release, and an
   app targeting a retired version silently "falls forward" to whatever the
   oldest still-accessible version is, rather than erroring.
+
+## Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/ThanhKhoaIT">
+        <img src="https://github.com/ThanhKhoaIT.png?size=100" width="100" alt="ThanhKhoaIT"/><br/>
+        <sub><b>Khoa Nguyen</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/kenilt">
+        <img src="https://github.com/kenilt.png?size=100" width="100" alt="kenilt"/><br/>
+        <sub><b>Thang Nguyen</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
