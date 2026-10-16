@@ -110,8 +110,12 @@ async function resolveToken(role: Role, store: string): Promise<string> {
   );
 }
 
-export async function resolveConfig(): Promise<ResolvedConfig> {
-  const rc = loadRc();
+// toStoreOverride replaces rc.to.store for this run only (never saved) —
+// applied before the checks below so a picked destination is validated
+// exactly like one read from .syncifyrc.json.
+export async function resolveConfig(toStoreOverride?: string): Promise<ResolvedConfig> {
+  const loaded = loadRc();
+  const rc: SyncifyRc = toStoreOverride ? { ...loaded, to: { ...loaded.to, store: toStoreOverride } } : loaded;
 
   if (rc.from.store === rc.to.store) {
     throw new Error('.syncifyrc.json: "from.store" and "to.store" must not be the same store.');

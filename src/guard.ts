@@ -42,7 +42,8 @@ export async function assertSafeToWrite(devClient: ShopifyClient, config: Resolv
 
   if (liveDomain !== config.to.store) {
     throw new Error(
-      `Destination guard failed: live shop domain "${liveDomain}" does not match configured "to.store" (${config.to.store}). Aborting — no writes were made.`
+      `Destination guard failed: live shop domain "${liveDomain}" does not match configured "to.store" (${config.to.store}). ` +
+        `The SHOPIFY_DEV_* credentials in .env belong to "${liveDomain}", not the selected destination. Aborting — no writes were made.`
     );
   }
 

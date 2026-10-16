@@ -1,6 +1,6 @@
 import prompts from 'prompts';
 import { ShopifyClient } from '../client.js';
-import { resolveConfig } from '../config.js';
+import { loadRc, resolveConfig } from '../config.js';
 import { assertSafeToWrite } from '../guard.js';
 import { assertRequiredScopes } from '../scopes.js';
 import { logger } from '../logger.js';
@@ -79,11 +79,35 @@ const RESOURCE_LABELS: Record<string, string> = {
   relink: '🔗 Relink references',
 };
 
+// Lets the user pick this run's destination from guard.allowedDestinations
+// (current to.store pre-selected). Not saved to .syncifyrc.json — use
+// `syncify config set to.store` to change the default. Skipped with --yes,
+// without a TTY, or when there's only one allowed destination.
+async function pickDestination(yes: boolean): Promise<string | undefined> {
+  const rc = loadRc();
+  const destinations = rc.guard.allowedDestinations.filter((d) => d !== rc.from.store);
+  if (yes || !process.stdin.isTTY || destinations.length <= 1) return undefined;
+
+  const initial = Math.max(0, destinations.indexOf(rc.to.store));
+  const { store } = await prompts({
+    type: 'select',
+    name: 'store',
+    message: 'Destination (Dev) store',
+    choices: destinations.map((d) => ({ title: d === rc.to.store ? `${d} (default)` : d, value: d })),
+    initial,
+  });
+
+  if (!store) {
+    throw new Error('No destination selected — aborting. No writes were made.');
+  }
+  return store;
+}
+
 export async function runSync(flags: SyncFlags): Promise<void> {
-  const config = await resolveConfig();
+  const yes = flags.yes ?? false;
+  const config = await resolveConfig(await pickDestination(yes));
   let resources = flags.resources ? flags.resources.split(',').map((r) => r.trim()) : config.resources;
   const live = flags.live ?? false;
-  const yes = flags.yes ?? false;
   const since = flags.since ? parseSince(flags.since) : undefined;
 
   const unknown = resources.filter((r) => !RUNNERS[r]);

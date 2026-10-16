@@ -200,7 +200,11 @@ running `syncify sync --resources theme`.
    mutation; it only reads from Production and reports counts.
 7. **No `--from`/`--to` flags on `sync`.** Direction is only ever read from
    `.syncifyrc.json`, changed deliberately via `syncify config set`, so a
-   typo'd CLI flag can't reverse the sync for a single run.
+   typo'd CLI flag can't reverse the sync for a single run. When
+   `guard.allowedDestinations` lists more than one store, `sync` asks which
+   one to write to for that run (current `to.store` pre-selected; skipped
+   with `--yes` or without a TTY). The choice can only come from the
+   allowlist, still goes through checks 3–4, and is never saved.
 
 ## Commands
 
